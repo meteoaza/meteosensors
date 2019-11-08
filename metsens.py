@@ -1,5 +1,5 @@
-# import string
-# import random
+import string
+import random
 import time
 import os
 import sys
@@ -93,8 +93,12 @@ class Main_Window(QtWidgets.QMainWindow):
             Logs(' readSettings ' + str(sys.exc_info()), 1).progLog()
 
     def writeSettings(self):
+        if self.w.topText.toPlainText() == '':
+            name = 'None'
+        else:
+            name = self.w.topText.toPlainText()
         new_port = {
-            'NAME': self.w.topText.toPlainText(),
+            'NAME': name,
             'BAUD': self.w.baudBox.currentText(),
             'BYTESIZE': self.w.byteBox.currentText(),
             'PARITY': self.w.parityBox.currentText(),
@@ -141,27 +145,61 @@ class Main_Window(QtWidgets.QMainWindow):
 
     def initScanPort(self):
         PORTS = self.settings['PORTSET']
-        port_to_scan = []
+        ports_to_scan = []
         for port in PORTS:
             if PORTS[port]["NAME"] != 'None':
-                port_to_scan.append(port)
-        Portscan(True, *port_to_scan, **self.settings)
-        self.goOnFrame()
+                ports_to_scan.append(port)
+        self.port_scan = Portscan(*ports_to_scan, **self.settings)
+        self.port_scan.running = True
+        # self.port_scan.setPorts()
+        self.mainFrame()
 
-    def goOnFrame(self):
+    def mainFrame(self):
         PORTS = self.settings['PORTSET']
         FRAMES = self.settings['FRAMESET']
+        clock = datetime.now().strftime('%d.%m.%Y %H:%M:%S')
+        self.w.timeLabel.setText(clock)
         for frame in FRAMES:
             port_box = getattr(self.w, FRAMES[frame]['PORT'])
             current_port = port_box.currentText()
-            text_frame = getattr(self.w, FRAMES[frame]['TEXT'])
             if current_port != 'None':
+                value_frame = getattr(self.w, FRAMES[frame]['VALUE'])
+                text_frame = getattr(self.w, FRAMES[frame]['TEXT'])
                 name_button = getattr(self.w, FRAMES[frame]['NAME'])
                 name_button.setText(PORTS[current_port]['NAME'])
-                with open(f"DATA/{PORTS[current_port]['SENSTYPE']}_{current_port}.dat", 'r')as f:
-                    data = f.read()
-                text_frame.setText(data)
-        QTimer.singleShot(2000, self.goOnFrame)
+                data = self.processData(current_port)
+                value_frame.setText(data['VALUE'])
+                text_frame.setText(data['DATA'])
+                color = data['COLOR']
+                value_frame.setStyleSheet(f'background-color: {color}')
+        QTimer.singleShot(1000, self.mainFrame)
+
+    def processData(self, port):
+        PORTS = self.settings['PORTSET']
+        SENS = PORTS[port]['SENSTYPE']
+        try:
+            with open(f"DATA/{SENS}_{port}.dat", 'r')as f:
+                data = f.read()
+        except FileNotFoundError:
+            pass
+        buf = data.split()
+        if SENS == 'LT':
+            value = buf[2][:-2]
+            status = buf[4]
+            if 'W' in status or 'A' in status or 'E' in status:
+                color = 'red'
+            elif 'I' in status or 'S' in status:
+                color = 'yellow'
+            else:
+                color = 'green'
+        elif SENS == 'CL':
+            print(buf)
+        processed = {
+            'DATA': data,
+            'VALUE': value,
+            'COLOR': color
+        }
+        return processed
 
     def sendMessage(self, arg):
         print(arg)
@@ -173,8 +211,9 @@ class Main_Window(QtWidgets.QMainWindow):
                 send_button.clicked.disconnect()
             except TypeError:
                 pass
+        self.w.timeLabel.setText('')
+        self.port_scan.running = False
         self.readSettings()
-        Portscan(False, **self.settings).stopScan()
 
     def keyPressEvent(self, e):
         if e.key() == Qt.Key_Escape:
@@ -182,63 +221,63 @@ class Main_Window(QtWidgets.QMainWindow):
 
 
 class Portscan():
-    def __init__(self, running, *args, **kwargs):
-        self.running = running
+    def __init__(self, *args, **kwargs):
         self.ports_to_scan = args
         self.settings = kwargs
-        self.log_perm = self.settings['PROGSET']['PORTLOG']
         if not os.path.exists('DATA'):
             os.mkdir('DATA')
-        self.setPorts()
 
     def setPorts(self):
-        PORTSET = self.settings['PORTSET']
+        PORTS = self.settings['PORTSET']
         for port in self.ports_to_scan:
             try:
-                if PORTSET[port]['PARITY'] == 'EVEN':
-                    parity = serial.PARITY_EVEN
-                elif PORTSET[port]['PARITY'] == 'ODD':
-                    parity = serial.PARITY_ODD
-                elif PORTSET[port]['PARITY'] == 'NO':
-                    parity = serial.PARITY_NONE
-                elif PORTSET[port]['PARITY'] == 'MARK':
-                    parity = serial.PARITY_MARK
-                elif PORTSET[port]['PARITY'] == 'SPACE':
-                    parity = serial.PARITY_SPACE
-                else:
-                    parity = 'NO'
-                ser = serial.Serial(
-                    port=port,
-                    baudrate=int(PORTSET[port]['BAUD']),
-                    bytesize=int(PORTSET[port]['BYTESIZE']),
-                    parity=parity,
-                    stopbits=int(PORTSET[port]['STOPBIT']),
-                    timeout=3,
-                )
-                sens_type = PORTSET[port]['SENSTYPE']
-                scan_thread = threading.Thread(target=self.readPort, args=(ser, sens_type, port), daemon=True)
+                # if PORTS[port]['PARITY'] == 'EVEN':
+                #     parity = serial.PARITY_EVEN
+                # elif PORTS[port]['PARITY'] == 'ODD':
+                #     parity = serial.PARITY_ODD
+                # elif PORTS[port]['PARITY'] == 'NO':
+                #     parity = serial.PARITY_NONE
+                # elif PORTS[port]['PARITY'] == 'MARK':
+                #     parity = serial.PARITY_MARK
+                # elif PORTS[port]['PARITY'] == 'SPACE':
+                #     parity = serial.PARITY_SPACE
+                # else:
+                #     parity = 'NO'
+                # ser = serial.Serial(
+                #     port=port,
+                #     baudrate=int(PORTS[port]['BAUD']),
+                #     bytesize=int(PORTS[port]['BYTESIZE']),
+                #     parity=parity,
+                #     stopbits=int(PORTS[port]['STOPBIT']),
+                #     timeout=3,
+                # )
+                ser = '0'
+                sens_type = PORTS[port]['SENSTYPE']
+                port_args = (ser, sens_type, port)
+                scan_thread = threading.Thread(target=self.readPort, args=(*port_args,), daemon=True)
                 scan_thread.start()
             except Exception:
-                Logs(' scanPorts '+ str(sys.exc_info()), self.log_perm).portLog()
+                Logs(' scanPorts ' + str(sys.exc_info()), self.settings['PROGSET']['PORTLOG']).portLog()
 
-    def readPort(self, ser, sens_type, port):
+    def readPort(self, *args):
         while self.running:
-            if sens_type == 'CL':
-                buf = ser.read_until('\r').rstrip()
-            elif sens_type == 'LT':
-                b = ser.readline()
-                buf = b + ser.read_until('\r').rstrip()
-            elif sens_type == 'MILOS':
-                buf = ser.readline().strip()
-            else:
-                buf = ser.readline().rstrip()
-            data = buf.decode('UTF-8')
+            ser = args[0]
+            sens_type = args[1]
+            port = args[2]
+            # if sens_type == 'CL':
+            #     buf = ser.read_until('\r').rstrip()
+            # elif sens_type == 'LT':
+            #     b = ser.readline()
+            #     buf = b + ser.read_until('\r').rstrip()
+            # elif sens_type == 'MILOS':
+            #     buf = ser.readline().strip()
+            # else:
+            #     buf = ser.readline().rstrip()
+            # data = buf.decode('UTF-8')
+            data = '\n'.join(args)
             with open(f'DATA/{sens_type}_{port}.dat', 'w')as f:
                 f.write(data)
-            time.sleep(1)
-
-    def stopScan(self):
-        print(self.running)
+            time.sleep(1.5)
 
 
 class Logs():
@@ -263,7 +302,6 @@ class Logs():
         if self.write:
             with open('LOG/sens.log', 'a')as f:
                 f.write(self.t + self.log + '\n')
-
 
 
 if __name__ == '__main__':
