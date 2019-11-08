@@ -26,7 +26,7 @@ class Main_Window(QtWidgets.QMainWindow):
         self.w.byteBox.addItems(['None', '5', '6', '7', '8'])
         self.w.parityBox.addItems(['None', 'NO', 'ODD', 'EVEN', 'MARK', 'SPACE'])
         self.w.stopbitBox.addItems(['None', '1', '1.5', '2'])
-        self.w.senstypeBox.addItems(['None', 'LT', 'CL', 'WT', 'MAWS', 'MILOS'])
+        self.w.senstypeBox.addItems(['None', 'LT', 'CL', 'WT', 'MAWS', 'MILOS', 'PTB'])
         self.w.applyButton.clicked.connect(self.writeSettings)
         self.w.scanButton.clicked.connect(self.initScanPort)
         self.w.resetButton.clicked.connect(self.reset)
@@ -151,7 +151,7 @@ class Main_Window(QtWidgets.QMainWindow):
                 ports_to_scan.append(port)
         self.port_scan = Portscan(*ports_to_scan, **self.settings)
         self.port_scan.running = True
-        # self.port_scan.setPorts()
+        self.port_scan.setPorts()
         self.mainFrame()
 
     def mainFrame(self):
@@ -182,23 +182,44 @@ class Main_Window(QtWidgets.QMainWindow):
                 data = f.read()
         except FileNotFoundError:
             pass
-        buf = data.split()
-        if SENS == 'LT':
-            value = buf[2][:-2]
-            status = buf[4]
-            if 'W' in status or 'A' in status or 'E' in status:
-                color = 'red'
-            elif 'I' in status or 'S' in status:
-                color = 'yellow'
-            else:
+        try:
+            buf = data.split()
+            if SENS == 'LT':
+                value = buf[2][:-2]
+                status = buf[4]
+                if 'W' in status or 'A' in status or 'E' in status:
+                    color = 'red'
+                elif 'I' in status or 'S' in status:
+                    color = 'yellow'
+                else:
+                    color = 'green'
+            elif SENS == 'CL':
+                value = buf[3]
+                status = buf[6]
+            elif SENS == 'WT':
+                if 'WIMWV' in data:
+                    buf = data.replace(',', ' ').split()
+                    value = f'DD = {buf[1]} FF = {buf[3]}'
+                    color = 'green'
+            elif SENS =='MAWS':
+                if 'PAMWV' in data:
+                    buf = data.replace(',', ' ').split()
+                    value = f'DD = {buf[1]} FF = {buf[3]}'
+                elif 'TU' in data:
+                    buf = data.split()
+                    value = f'TEMP = {buf[1]}'
                 color = 'green'
-        elif SENS == 'CL':
-            print(buf)
-        processed = {
-            'DATA': data,
-            'VALUE': value,
-            'COLOR': color
-        }
+            processed = {
+                'DATA': data,
+                'VALUE': value,
+                'COLOR': color
+            }
+        except UnboundLocalError:
+            processed = {
+                'DATA': data,
+                'VALUE': '----',
+                'COLOR': 'yellow'
+            }
         return processed
 
     def sendMessage(self, arg):
@@ -231,27 +252,26 @@ class Portscan():
         PORTS = self.settings['PORTSET']
         for port in self.ports_to_scan:
             try:
-                # if PORTS[port]['PARITY'] == 'EVEN':
-                #     parity = serial.PARITY_EVEN
-                # elif PORTS[port]['PARITY'] == 'ODD':
-                #     parity = serial.PARITY_ODD
-                # elif PORTS[port]['PARITY'] == 'NO':
-                #     parity = serial.PARITY_NONE
-                # elif PORTS[port]['PARITY'] == 'MARK':
-                #     parity = serial.PARITY_MARK
-                # elif PORTS[port]['PARITY'] == 'SPACE':
-                #     parity = serial.PARITY_SPACE
-                # else:
-                #     parity = 'NO'
-                # ser = serial.Serial(
-                #     port=port,
-                #     baudrate=int(PORTS[port]['BAUD']),
-                #     bytesize=int(PORTS[port]['BYTESIZE']),
-                #     parity=parity,
-                #     stopbits=int(PORTS[port]['STOPBIT']),
-                #     timeout=3,
-                # )
-                ser = '0'
+                if PORTS[port]['PARITY'] == 'EVEN':
+                    parity = serial.PARITY_EVEN
+                elif PORTS[port]['PARITY'] == 'ODD':
+                    parity = serial.PARITY_ODD
+                elif PORTS[port]['PARITY'] == 'NO':
+                    parity = serial.PARITY_NONE
+                elif PORTS[port]['PARITY'] == 'MARK':
+                    parity = serial.PARITY_MARK
+                elif PORTS[port]['PARITY'] == 'SPACE':
+                    parity = serial.PARITY_SPACE
+                else:
+                    parity = 'NO'
+                ser = serial.Serial(
+                    port=port,
+                    baudrate=int(PORTS[port]['BAUD']),
+                    bytesize=int(PORTS[port]['BYTESIZE']),
+                    parity=parity,
+                    stopbits=int(PORTS[port]['STOPBIT']),
+                    timeout=3,
+                )
                 sens_type = PORTS[port]['SENSTYPE']
                 port_args = (ser, sens_type, port)
                 scan_thread = threading.Thread(target=self.readPort, args=(*port_args,), daemon=True)
@@ -264,17 +284,16 @@ class Portscan():
             ser = args[0]
             sens_type = args[1]
             port = args[2]
-            # if sens_type == 'CL':
-            #     buf = ser.read_until('\r').rstrip()
-            # elif sens_type == 'LT':
-            #     b = ser.readline()
-            #     buf = b + ser.read_until('\r').rstrip()
-            # elif sens_type == 'MILOS':
-            #     buf = ser.readline().strip()
-            # else:
-            #     buf = ser.readline().rstrip()
-            # data = buf.decode('UTF-8')
-            data = '\n'.join(args)
+            if sens_type == 'CL':
+                buf = ser.read_until('\r').rstrip()
+            elif sens_type == 'LT':
+                b = ser.readline()
+                buf = b + ser.read_until('\r').rstrip()
+            elif sens_type == 'MILOS':
+                buf = ser.readline().strip()
+            else:
+                buf = ser.readline().rstrip()
+            data = buf.decode('UTF-8')
             with open(f'DATA/{sens_type}_{port}.dat', 'w')as f:
                 f.write(data)
             time.sleep(1.5)
