@@ -1,5 +1,6 @@
 # import string
 # import random
+import time
 import os
 import sys
 import json
@@ -144,7 +145,8 @@ class Main_Window(QtWidgets.QMainWindow):
         for port in PORTS:
             if PORTS[port]["NAME"] != 'None':
                 port_to_scan.append(port)
-        Portscan(*port_to_scan, **self.settings)
+        Portscan(True, *port_to_scan, **self.settings)
+        self.goOnFrame()
 
     def goOnFrame(self):
         PORTS = self.settings['PORTSET']
@@ -156,10 +158,10 @@ class Main_Window(QtWidgets.QMainWindow):
             if current_port != 'None':
                 name_button = getattr(self.w, FRAMES[frame]['NAME'])
                 name_button.setText(PORTS[current_port]['NAME'])
-                with open(f'DATA/{current_port}.dat', 'r')as f:
+                with open(f"DATA/{PORTS[current_port]['SENSTYPE']}_{current_port}.dat", 'r')as f:
                     data = f.read()
                 text_frame.setText(data)
-        QTimer.singleShot(2000, self.scanPorts)
+        QTimer.singleShot(2000, self.goOnFrame)
 
     def sendMessage(self, arg):
         print(arg)
@@ -167,8 +169,12 @@ class Main_Window(QtWidgets.QMainWindow):
     def reset(self):
         for frame in self.settings['FRAMESET']:
             send_button = getattr(self.w, self.settings['FRAMESET'][frame]['SEND'])
-            send_button.clicked.disconnect()
+            try:
+                send_button.clicked.disconnect()
+            except TypeError:
+                pass
         self.readSettings()
+        Portscan(False, **self.settings).stopScan()
 
     def keyPressEvent(self, e):
         if e.key() == Qt.Key_Escape:
@@ -176,7 +182,8 @@ class Main_Window(QtWidgets.QMainWindow):
 
 
 class Portscan():
-    def __init__(self, *args, **kwargs):
+    def __init__(self, running, *args, **kwargs):
+        self.running = running
         self.ports_to_scan = args
         self.settings = kwargs
         self.log_perm = self.settings['PROGSET']['PORTLOG']
@@ -215,7 +222,7 @@ class Portscan():
                 Logs(' scanPorts '+ str(sys.exc_info()), self.log_perm).portLog()
 
     def readPort(self, ser, sens_type, port):
-        while True:
+        while self.running:
             if sens_type == 'CL':
                 buf = ser.read_until('\r').rstrip()
             elif sens_type == 'LT':
@@ -226,8 +233,12 @@ class Portscan():
             else:
                 buf = ser.readline().rstrip()
             data = buf.decode('UTF-8')
-            with open(f'DATA/{port}.dat', 'w')as f:
+            with open(f'DATA/{sens_type}_{port}.dat', 'w')as f:
                 f.write(data)
+            time.sleep(1)
+
+    def stopScan(self):
+        print(self.running)
 
 
 class Logs():
