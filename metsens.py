@@ -4,7 +4,7 @@ import os
 import sys
 import json
 import serial
-# import threading
+import threading
 from datetime import datetime
 from PyQt5 import QtWidgets, QtGui
 from PyQt5.QtCore import QTimer, Qt
@@ -17,45 +17,9 @@ class Main_Window(QtWidgets.QMainWindow):
         self.w = Ui_MainWindow()
         self.w.setupUi(self)
         # All necessary for settings init
+        self.progset_list = ['VOICE', 'SOUND', 'PORTLOG', 'SENSLOG', 'DATAWRITE']
         self.com_list = [f'COM{i}' for i in range(1, 33)]
         self.frame_list = [f'FRAME{i}' for i in range(1, 21)]
-        self.progset_list = ['VOICE', 'SOUND', 'PORTLOG', 'SENSLOG', 'DATAWRITE']
-        if not os.path.exists('metsens.conf'):
-            COMs = dict.fromkeys(self.com_list)
-            FRAMEs = dict.fromkeys(self.frame_list)
-            SETs = dict.fromkeys(self.progset_list)
-            self.settings = {'PROGSET': SETs, 'PORTSET': COMs, 'FRAMESET': FRAMEs}
-            self.settings['PROGSET'] = {
-                'VOICE': 0,
-                'SOUND': 0,
-                'PORTLOG': 0,
-                'SENSLOG': 0,
-                'DATAWRITE': 0,
-                'DEADTIME': 0
-            }
-            for com in self.com_list:
-                self.settings['PORTSET'][com] = {
-                    'NAME': 'None',
-                    'BAUD': 'None',
-                    'BYTESIZE': 'None',
-                    'PARITY': 'None',
-                    'STOPBIT': 'None',
-                    'SENSTYPE': 'None',
-                    'SENDMES': 'None'
-                }
-            i = 1
-            for frame in self.frame_list:
-                self.settings['FRAMESET'][frame] = {
-                    'VALUE': f'valueLabel_{i}',
-                    'TEXT': f'portText_{i}',
-                    'PORT': f'portBox_{i}',
-                    'NAME': f'nameButton_{i}',
-                    'SEND': f'sendButton_{i}',
-                    'MUTE': f'muteButton_{i}'
-                }
-                i += 1
-            with open('metsens.conf', 'w')as file:
-                json.dump(self.settings, file, indent=4, ensure_ascii=False)
         self.w.setportBox.addItems(['None'] + self.com_list)
         self.w.baudBox.addItems(['None', '150', '300', '600', '900', '1200', '2400', '4800', '7200', '9600'])
         self.w.byteBox.addItems(['None', '5', '6', '7', '8'])
@@ -63,7 +27,7 @@ class Main_Window(QtWidgets.QMainWindow):
         self.w.stopbitBox.addItems(['None', '1', '1.5', '2'])
         self.w.senstypeBox.addItems(['None', 'LT', 'CL', 'WT', 'MAWS', 'MILOS'])
         self.w.applyButton.clicked.connect(self.writeSettings)
-        self.w.scanButton.clicked.connect(self.scanPorts)
+        self.w.scanButton.clicked.connect(self.initScanPort)
         self.w.resetButton.clicked.connect(self.reset)
         self.w.setportBox.activated[str].connect(self.showSettings)
         self.readSettings()
@@ -71,6 +35,42 @@ class Main_Window(QtWidgets.QMainWindow):
 
     def readSettings(self):
         try:
+            if not os.path.exists('metsens.conf'):
+                SETs = dict.fromkeys(self.progset_list)
+                COMs = dict.fromkeys(self.com_list)
+                FRAMEs = dict.fromkeys(self.frame_list)
+                self.settings = {'PROGSET': SETs, 'PORTSET': COMs, 'FRAMESET': FRAMEs}
+                self.settings['PROGSET'] = {
+                    'VOICE': 0,
+                    'SOUND': 0,
+                    'PORTLOG': 0,
+                    'SENSLOG': 0,
+                    'DATAWRITE': 0,
+                    'DEADTIME': 0
+                }
+                for com in self.com_list:
+                    self.settings['PORTSET'][com] = {
+                        'NAME': 'None',
+                        'BAUD': 'None',
+                        'BYTESIZE': 'None',
+                        'PARITY': 'None',
+                        'STOPBIT': 'None',
+                        'SENSTYPE': 'None',
+                        'SENDMES': 'None'
+                    }
+                i = 1
+                for frame in self.frame_list:
+                    self.settings['FRAMESET'][frame] = {
+                        'VALUE': f'valueLabel_{i}',
+                        'TEXT': f'portText_{i}',
+                        'PORT': f'portBox_{i}',
+                        'NAME': f'nameButton_{i}',
+                        'SEND': f'sendButton_{i}',
+                        'MUTE': f'muteButton_{i}'
+                    }
+                    i += 1
+                with open('metsens.conf', 'w')as file:
+                    json.dump(self.settings, file, indent=4, ensure_ascii=False)
             self.settings = json.load(open('metsens.conf'))
             # Add existing sensor's ports to port boxes
             port_list = ['None']
@@ -138,7 +138,15 @@ class Main_Window(QtWidgets.QMainWindow):
             self.w.stopbitBox.setCurrentText('None')
             self.w.senstypeBox.setCurrentText('None')
 
-    def scanPorts(self):
+    def initScanPort(self):
+        PORTS = self.settings['PORTSET']
+        port_to_scan = []
+        for port in PORTS:
+            if PORTS[port]["NAME"] != 'None':
+                port_to_scan.append(port)
+        Portscan(*port_to_scan, **self.settings)
+
+    def goOnFrame(self):
         PORTS = self.settings['PORTSET']
         FRAMES = self.settings['FRAMESET']
         for frame in FRAMES:
@@ -148,7 +156,8 @@ class Main_Window(QtWidgets.QMainWindow):
             if current_port != 'None':
                 name_button = getattr(self.w, FRAMES[frame]['NAME'])
                 name_button.setText(PORTS[current_port]['NAME'])
-                data = Portscan(current_port, **self.settings).scanPorts()
+                with open(f'DATA/{current_port}.dat', 'r')as f:
+                    data = f.read()
                 text_frame.setText(data)
         QTimer.singleShot(2000, self.scanPorts)
 
@@ -167,40 +176,58 @@ class Main_Window(QtWidgets.QMainWindow):
 
 
 class Portscan():
-    def __init__(self, port, **kwargs):
-        self.port_to_scan = port
+    def __init__(self, *args, **kwargs):
+        self.ports_to_scan = args
         self.settings = kwargs
         self.log_perm = self.settings['PROGSET']['PORTLOG']
+        if not os.path.exists('DATA'):
+            os.mkdir('DATA')
+        self.setPorts()
 
-    def scanPorts(self):
+    def setPorts(self):
         PORTSET = self.settings['PORTSET']
-        try:
-            if PORTSET[self.port_to_scan]['PARITY'] == 'EVEN':
-                parity = serial.PARITY_EVEN
-            elif PORTSET[self.port_to_scan]['PARITY'] == 'ODD':
-                parity = serial.PARITY_ODD
-            elif PORTSET[self.port_to_scan]['PARITY'] == 'NO':
-                parity = serial.PARITY_NONE
-            elif PORTSET[self.port_to_scan]['PARITY'] == 'MARK':
-                parity = serial.PARITY_MARK
-            elif PORTSET[self.port_to_scan]['PARITY'] == 'SPACE':
-                parity = serial.PARITY_SPACE
+        for port in self.ports_to_scan:
+            try:
+                if PORTSET[port]['PARITY'] == 'EVEN':
+                    parity = serial.PARITY_EVEN
+                elif PORTSET[port]['PARITY'] == 'ODD':
+                    parity = serial.PARITY_ODD
+                elif PORTSET[port]['PARITY'] == 'NO':
+                    parity = serial.PARITY_NONE
+                elif PORTSET[port]['PARITY'] == 'MARK':
+                    parity = serial.PARITY_MARK
+                elif PORTSET[port]['PARITY'] == 'SPACE':
+                    parity = serial.PARITY_SPACE
+                else:
+                    parity = 'NO'
+                ser = serial.Serial(
+                    port=port,
+                    baudrate=int(PORTSET[port]['BAUD']),
+                    bytesize=int(PORTSET[port]['BYTESIZE']),
+                    parity=parity,
+                    stopbits=int(PORTSET[port]['STOPBIT']),
+                    timeout=3,
+                )
+                sens_type = PORTSET[port]['SENSTYPE']
+                scan_thread = threading.Thread(target=self.readPort, args=(ser, sens_type, port), daemon=True)
+                scan_thread.start()
+            except Exception:
+                Logs(' scanPorts '+ str(sys.exc_info()), self.log_perm).portLog()
+
+    def readPort(self, ser, sens_type, port):
+        while True:
+            if sens_type == 'CL':
+                buf = ser.read_until('\r').rstrip()
+            elif sens_type == 'LT':
+                b = ser.readline()
+                buf = b + ser.read_until('\r').rstrip()
+            elif sens_type == 'MILOS':
+                buf = ser.readline().strip()
             else:
-                parity = 'NO'
-            ser = serial.Serial(
-                port=self.port_to_scan,
-                baudrate=int(PORTSET[self.port_to_scan]['BAUD']),
-                bytesize=int(PORTSET[self.port_to_scan]['BYTESIZE']),
-                parity=parity,
-                stopbits=int(PORTSET[self.port_to_scan]['STOPBIT']),
-                timeout=3,
-            )
-            sensor = PORTSET[self.port_to_scan]['SENSTYPE'],
-            data = ser.read().until('/r')
-        except Exception as e:
-            Logs(' scanPorts '+ str(sys.exc_info()), self.log_perm).portLog()
-            data = str(sys.exc_info())
-        return data
+                buf = ser.readline().rstrip()
+            data = buf.decode('UTF-8')
+            with open(f'DATA/{port}.dat', 'w')as f:
+                f.write(data)
 
 
 class Logs():
