@@ -1,12 +1,10 @@
-import string
-import random
 import time
 import os
 import sys
 import json
 import serial
 import threading
-from datetime import datetime
+from datetime import datetime, timedelta
 from PyQt5 import QtWidgets, QtGui
 from PyQt5.QtCore import QTimer, Qt
 from metsens_design import Ui_MainWindow
@@ -18,7 +16,7 @@ class Main_Window(QtWidgets.QMainWindow):
         self.w = Ui_MainWindow()
         self.w.setupUi(self)
         # All necessary for settings init
-        self.progset_list = ['VOICE', 'SOUND', 'PORTLOG', 'SENSLOG', 'DATAWRITE']
+        self.progset_list = ['VOICE', 'SOUND', 'SENSLOG', 'DATAWRITE']
         self.com_list = [f'COM{i}' for i in range(1, 33)]
         self.frame_list = [f'FRAME{i}' for i in range(1, 21)]
         self.w.setportBox.addItems(['None'] + self.com_list)
@@ -31,6 +29,8 @@ class Main_Window(QtWidgets.QMainWindow):
         self.w.scanButton.clicked.connect(self.initScanPort)
         self.w.resetButton.clicked.connect(self.reset)
         self.w.setportBox.activated[str].connect(self.showSettings)
+        self.w.senstypeBox.activated[str].connect(lambda: self.w.topText.setText(self.w.senstypeBox.currentText()))
+        self.choose_by_name = 0
         self.readSettings()
         self.show()
 
@@ -44,7 +44,6 @@ class Main_Window(QtWidgets.QMainWindow):
                 self.settings['PROGSET'] = {
                     'VOICE': 0,
                     'SOUND': 0,
-                    'PORTLOG': 0,
                     'SENSLOG': 0,
                     'DATAWRITE': 0,
                     'DEADTIME': 0
@@ -65,7 +64,7 @@ class Main_Window(QtWidgets.QMainWindow):
                         'VALUE': f'valueLabel_{i}',
                         'TEXT': f'portText_{i}',
                         'PORT': f'portBox_{i}',
-                        'NAME': f'nameButton_{i}',
+                        'NAME': f'nameBox_{i}',
                         'SEND': f'sendButton_{i}',
                         'MUTE': f'muteButton_{i}'
                     }
@@ -73,30 +72,45 @@ class Main_Window(QtWidgets.QMainWindow):
                 with open('metsens.conf', 'w')as file:
                     json.dump(self.settings, file, indent=4, ensure_ascii=False)
             self.settings = json.load(open('metsens.conf'))
+            PROGSET = self.settings['PROGSET']
+            PORTSET = self.settings['PORTSET']
+            FRAMESET = self.settings['FRAMESET']
             # Add existing sensor's ports to port boxes
             port_list = ['None']
-            for com in self.settings['PORTSET']:
-                if self.settings['PORTSET'][com]['NAME'] != 'None':
+            name_list = ['None']
+            for com in PORTSET:
+                name = PORTSET[com]['NAME']
+                if name != 'None':
                     port_list.append(com)
-            for frame in self.settings['FRAMESET']:
-                port_box = getattr(self.w, self.settings['FRAMESET'][frame]['PORT'])
+                    name_list.append(name)
+            for frame in FRAMESET:
+                port_box = getattr(self.w, FRAMESET[frame]['PORT'])
+                name_box = getattr(self.w, FRAMESET[frame]['NAME'])
+                try:
+                    port_box.activated[str].disconnect()
+                    name_box.activated[str].disconnect()
+                except TypeError:
+                    pass
+                port_box.activated[str].connect(lambda: self.chooseByName(False))
+                name_box.activated[str].connect(lambda: self.chooseByName(True))
                 port_box.clear()
+                name_box.clear()
                 port_box.addItems(port_list)
+                name_box.addItems(name_list)
             # Show program settings in window
-            self.w.voiceCheck.setCheckState(self.settings['PROGSET']['VOICE'])
-            self.w.soundCheck.setCheckState(self.settings['PROGSET']['SOUND'])
-            self.w.portlogCheck.setCheckState(self.settings['PROGSET']['PORTLOG'])
-            self.w.senslogCheck.setCheckState(self.settings['PROGSET']['SENSLOG'])
-            self.w.datawriteCheck.setCheckState(self.settings['PROGSET']['DATAWRITE'])
-            self.w.deadtimeSpin.setValue(self.settings['PROGSET']['DEADTIME'])
+            self.w.voiceCheck.setCheckState(PROGSET['VOICE'])
+            self.w.soundCheck.setCheckState(PROGSET['SOUND'])
+            self.w.senslogCheck.setCheckState(PROGSET['SENSLOG'])
+            self.w.datawriteCheck.setCheckState(PROGSET['DATAWRITE'])
+            self.w.deadtimeSpin.setValue(PROGSET['DEADTIME'])
         except Exception:
             Logs(' readSettings ' + str(sys.exc_info()), 1).progLog()
 
     def writeSettings(self):
-        if self.w.topText.toPlainText() == '':
+        if self.w.topText.text() == '':
             name = 'None'
         else:
-            name = self.w.topText.toPlainText()
+            name = self.w.topText.text()
         new_port = {
             'NAME': name,
             'BAUD': self.w.baudBox.currentText(),
@@ -108,7 +122,6 @@ class Main_Window(QtWidgets.QMainWindow):
         new_set = {
             'VOICE': self.w.voiceCheck.checkState(),
             'SOUND': self.w.soundCheck.checkState(),
-            'PORTLOG': self.w.portlogCheck.checkState(),
             'SENSLOG': self.w.senslogCheck.checkState(),
             'DATAWRITE': self.w.datawriteCheck.checkState(),
             'DEADTIME': self.w.deadtimeSpin.value()
@@ -151,7 +164,9 @@ class Main_Window(QtWidgets.QMainWindow):
                 ports_to_scan.append(port)
         self.port_scan = Portscan(*ports_to_scan, **self.settings)
         self.port_scan.running = True
-        self.port_scan.setPorts()
+        self.stop = False
+        if self.settings['PROGSET']['DATAWRITE']:
+            self.port_scan.setPorts()
         self.mainFrame()
 
     def mainFrame(self):
@@ -159,20 +174,28 @@ class Main_Window(QtWidgets.QMainWindow):
         FRAMES = self.settings['FRAMESET']
         clock = datetime.now().strftime('%d.%m.%Y %H:%M:%S')
         self.w.timeLabel.setText(clock)
+        self.w.topText.setText(self.showNotification())
         for frame in FRAMES:
             port_box = getattr(self.w, FRAMES[frame]['PORT'])
+            name_box = getattr(self.w, FRAMES[frame]['NAME'])
             current_port = port_box.currentText()
-            if current_port != 'None':
+            current_name = name_box.currentText()
+            if current_port != 'None' or current_name != 'None':
+                if self.choose_by_name:
+                    for port in PORTS:
+                        if PORTS[port]['NAME'] == current_name:
+                            current_port = port
+                            port_box.setCurrentText(current_port)
+                name_box.setCurrentText(PORTS[current_port]['NAME'])
                 value_frame = getattr(self.w, FRAMES[frame]['VALUE'])
                 text_frame = getattr(self.w, FRAMES[frame]['TEXT'])
-                name_button = getattr(self.w, FRAMES[frame]['NAME'])
-                name_button.setText(PORTS[current_port]['NAME'])
                 data = self.processData(current_port)
                 value_frame.setText(data['VALUE'])
                 text_frame.setText(data['DATA'])
                 color = data['COLOR']
                 value_frame.setStyleSheet(f'background-color: {color}')
-        QTimer.singleShot(1000, self.mainFrame)
+        if not self.stop:
+            QTimer.singleShot(1000, self.mainFrame)
 
     def processData(self, port):
         PORTS = self.settings['PORTSET']
@@ -196,6 +219,7 @@ class Main_Window(QtWidgets.QMainWindow):
             elif SENS == 'CL':
                 value = buf[3]
                 status = buf[6]
+                color = 'green'
             elif SENS == 'WT':
                 if 'WIMWV' in data:
                     buf = data.replace(',', ' ').split()
@@ -215,12 +239,44 @@ class Main_Window(QtWidgets.QMainWindow):
                 'COLOR': color
             }
         except UnboundLocalError:
-            processed = {
-                'DATA': data,
-                'VALUE': '----',
-                'COLOR': 'yellow'
-            }
+            Logs(' processData ' + str(sys.exc_info())).progLog()
+            try:
+                processed = {
+                    'DATA': data,
+                    'VALUE': '----',
+                    'COLOR': 'yellow'
+                }
+            except UnboundLocalError:
+                Logs(' processData ' + str(sys.exc_info())).progLog()
+                processed = {
+                    'DATA': 'No DATA found',
+                    'VALUE': 'ERROR',
+                    'COLOR': 'red'
+                }
         return processed
+
+    def showNotification(self):
+        try:
+            now_time = datetime.now()
+            log_time = datetime.fromtimestamp(os.stat('LOG/prog.log').st_mtime)
+            compare_time = timedelta(minutes=1)
+            if now_time - log_time <= compare_time:
+                try:
+                    with open('LOG/prog.log', 'r')as f:
+                        log = f.readlines()[-1][27:128]
+                except IndexError:
+                    print('index error')
+                    with open('LOG/prog.log', 'w')as f:
+                        f.write('Log file is made')
+            else:
+                log = ''
+            return log
+        except FileNotFoundError:
+            with open('LOG/prog.log', 'w')as f:
+                f.write('Log file is made')
+
+    def chooseByName(self, n):
+        self.choose_by_name = n
 
     def sendMessage(self, arg):
         print(arg)
@@ -233,7 +289,11 @@ class Main_Window(QtWidgets.QMainWindow):
             except TypeError:
                 pass
         self.w.timeLabel.setText('')
-        self.port_scan.running = False
+        try:
+            self.port_scan.running = False
+        except AttributeError:
+            pass
+        self.stop = True
         self.readSettings()
 
     def keyPressEvent(self, e):
@@ -277,26 +337,29 @@ class Portscan():
                 scan_thread = threading.Thread(target=self.readPort, args=(*port_args,), daemon=True)
                 scan_thread.start()
             except Exception:
-                Logs(' scanPorts ' + str(sys.exc_info()), self.settings['PROGSET']['PORTLOG']).portLog()
+                Logs(' scanPorts ' + str(sys.exc_info())).progLog()
 
     def readPort(self, *args):
-        while self.running:
-            ser = args[0]
-            sens_type = args[1]
-            port = args[2]
-            if sens_type == 'CL':
-                buf = ser.read_until('\r').rstrip()
-            elif sens_type == 'LT':
-                b = ser.readline()
-                buf = b + ser.read_until('\r').rstrip()
-            elif sens_type == 'MILOS':
-                buf = ser.readline().strip()
-            else:
-                buf = ser.readline().rstrip()
-            data = buf.decode('UTF-8')
-            with open(f'DATA/{sens_type}_{port}.dat', 'w')as f:
-                f.write(data)
-            time.sleep(1.5)
+        try:
+            while self.running:
+                ser = args[0]
+                sens_type = args[1]
+                port = args[2]
+                if sens_type == 'CL':
+                    buf = ser.read_until('\r').rstrip()
+                elif sens_type == 'LT':
+                    b = ser.readline()
+                    buf = b + ser.read_until('\r').rstrip()
+                elif sens_type == 'MILOS':
+                    buf = ser.readline().strip()
+                else:
+                    buf = ser.readline().rstrip()
+                data = buf.decode('UTF-8')
+                with open(f'DATA/{sens_type}_{port}.dat', 'w')as f:
+                    f.write(data)
+                time.sleep(1.5)
+        except Exception:
+            Logs(' readPort ' + str(sys.exc_info())).progLog()
 
 
 class Logs():
@@ -308,14 +371,8 @@ class Logs():
             os.mkdir('LOG/')
 
     def progLog(self):
-        if self.write:
-            with open('LOG/prog.log', 'a')as f:
-                f.write(self.t + self.log + '\n')
-
-    def portLog(self):
-        if self.write:
-            with open('LOG/port.log', 'a')as f:
-                f.write(self.t + self.log + '\n')
+        with open('LOG/prog.log', 'a')as f:
+            f.write(self.t + self.log + '\n')
 
     def sensLog(self):
         if self.write:

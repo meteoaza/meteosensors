@@ -3,8 +3,10 @@
   <component name="ChangeListManager">
     <list default="true" id="833c1584-7036-4e55-a6d4-7972b4daa5d7" name="Default Changelist" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/metsens.conf" beforeDir="false" afterPath="$PROJECT_DIR$/metsens.conf" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/metsens.conf" beforeDir="false" />
       <change beforePath="$PROJECT_DIR$/metsens.py" beforeDir="false" afterPath="$PROJECT_DIR$/metsens.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/metsens_design.py" beforeDir="false" afterPath="$PROJECT_DIR$/metsens_design.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/metsens_design_nix.ui" beforeDir="false" afterPath="$PROJECT_DIR$/metsens_design_nix.ui" afterDir="false" />
     </list>
     <option name="EXCLUDED_CONVERTED_TO_IGNORED" value="true" />
     <option name="SHOW_DIALOG" value="false" />
@@ -24,7 +26,7 @@
     <property name="SHARE_PROJECT_CONFIGURATION_FILES" value="true" />
     <property name="last_opened_file_path" value="$PROJECT_DIR$/../myBot" />
     <property name="restartRequiresConfirmation" value="false" />
-    <property name="settings.editor.selected.configurable" value="com.jetbrains.python.configuration.PyActiveSdkModuleConfigurable" />
+    <property name="settings.editor.selected.configurable" value="configurable.group.language" />
   </component>
   <component name="RunDashboard">
     <option name="ruleStates">
