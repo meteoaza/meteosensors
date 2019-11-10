@@ -2,9 +2,10 @@
 
 # Form implementation generated from reading ui file 'metsens_design_nix.ui'
 #
-# Created by: PyQt5 UI code generator 5.12.2
+# Created by: PyQt5 UI code generator 5.13.0
 #
 # WARNING! All changes made in this file will be lost!
+
 
 from PyQt5 import QtCore, QtGui, QtWidgets
 
@@ -12,7 +13,7 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 class Ui_MainWindow(object):
     def setupUi(self, MainWindow):
         MainWindow.setObjectName("MainWindow")
-        MainWindow.resize(992, 718)
+        MainWindow.resize(992, 738)
         self.centralwidget = QtWidgets.QWidget(MainWindow)
         self.centralwidget.setObjectName("centralwidget")
         self.gridLayout_6 = QtWidgets.QGridLayout(self.centralwidget)
@@ -1505,7 +1506,6 @@ class Ui_MainWindow(object):
         sizePolicy.setHeightForWidth(self.timeLabel.sizePolicy().hasHeightForWidth())
         self.timeLabel.setSizePolicy(sizePolicy)
         self.timeLabel.setMinimumSize(QtCore.QSize(200, 0))
-        self.timeLabel.setMaximumSize(QtCore.QSize(80, 16777215))
         font = QtGui.QFont()
         font.setPointSize(15)
         font.setBold(True)
@@ -1616,5 +1616,3 @@ class Ui_MainWindow(object):
         self.writeLog_prog.setText(_translate("MainWindow", "Prog"))
         self.writeLog_port.setText(_translate("MainWindow", "Port"))
         self.writeLog_sens.setText(_translate("MainWindow", "Sens"))
-
-

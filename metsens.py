@@ -86,6 +86,7 @@ class Main_Window(QtWidgets.QMainWindow):
             for frame in FRAMESET:
                 port_box = getattr(self.w, FRAMESET[frame]['PORT'])
                 name_box = getattr(self.w, FRAMESET[frame]['NAME'])
+                self.sendMessage(getattr(self.w, FRAMESET[frame]['SEND']), frame)
                 try:
                     port_box.activated[str].disconnect()
                     name_box.activated[str].disconnect()
@@ -206,59 +207,72 @@ class Main_Window(QtWidgets.QMainWindow):
         try:
             with open(f"DATA/{SENS}_{port}.dat", 'r')as f:
                 data = f.read()
-        except FileNotFoundError:
-            pass
-        try:
             buf = data.split()
             e_index = 1
             if SENS == 'LT':
-                for element in buf:
-                    if 'VIS' in element:
-                        e_index = buf.index(element)
-                value = buf[e_index+1]
-                status = buf[e_index+3]
-                if 'W' in status or 'A' in status or 'E' in status:
-                    color = 'red'
-                elif 'I' in status or 'S' in status:
-                    color = 'yellow'
-                    if '00100000000000000000' in status:
-                        color = 'orange'
+                if 'VIS' in data:
+                    for element in buf:
+                        if 'VIS' in element:
+                            e_index = buf.index(element)
+                    value = buf[e_index+1][:-2]
+                    status = buf[e_index+3]
+                    if 'W' in status or 'A' in status or 'E' in status:
+                        color = 'red'
+                    elif 'I' in status or 'S' in status:
+                        color = 'yellow'
+                        if '00100000000000000000' in status:
+                            color = 'orange'
+                    else:
+                        color = 'green'
                 else:
-                    color = 'green'
+                    data = 'SKIP'
+                    value = 'ERROR'
+                    color = 'red'
             elif SENS == 'CL':
-                for element in buf:
-                    if 'CT' in element:
-                        e_index = buf.index(element)
-                value = f'{buf[e_index+2]}  {buf[e_index+3]}  {buf[e_index+4]}'
-                status = buf[e_index+5]
-                if 'W' in buf[e_index+1] or 'A' in buf[e_index+1]:
+                if 'CT' in data:
+                    for element in buf:
+                        if 'CT' in element:
+                            e_index = buf.index(element)
+                    value = f'{buf[e_index+2]}  {buf[e_index+3]}  {buf[e_index+4]}'
+                    status = buf[e_index+5]
+                    if 'W' in buf[e_index+1] or 'A' in buf[e_index+1]:
+                        color = 'red'
+                    elif '00000040' in status:
+                        color = 'orange'
+                    else:
+                        color = 'green'
+                else:
+                    data = 'SKIP'
+                    value = 'ERROR'
                     color = 'red'
-                elif '00000040' in status:
-                    color = 'orange'
-                else:
-                    color = 'green'
             elif SENS == 'WT':
-                if 'WIMWV' in data:
-                    buf = data.replace(',', ' ').split()
-                    value = f'{buf[1]} // {buf[3]}'
-                    color = 'green'
+                if 'WIMWV' in data or 'TU' in data:
+                    if 'WIMWV' in data:
+                        buf = data.replace(',', ' ').split()
+                        value = f'{buf[1]} // {buf[3]}'
+                        color = 'green'
+                    else:
+                        data = 'SKIP'
+                        value = '-----'
+                        color = 'yellow'
                 else:
                     data = 'SKIP'
-                    value = '-----'
-                    color = 'yellow'
+                    value = 'ERROR'
+                    color = 'red'
             elif SENS =='MAWS':
-                if 'PAMWV' in data:
-                    buf = data.replace(',', ' ').split()
-                    value = f'{buf[1]} // {buf[3]}'
-                    color = 'green'
-                elif 'TU' in data:
-                    buf = data.split()
-                    value = f'TEMP = {buf[1]}'
-                    color = 'green'
+                if 'PAMWV'in data or 'TU' in data:
+                    if 'PAMWV' in data:
+                        buf = data.replace(',', ' ').split()
+                        value = f'{buf[1]} // {buf[3]}'
+                        color = 'green'
+                    elif 'TU' in data:
+                        buf = data.split()
+                        value = f'TEMP = {buf[1]}'
+                        color = 'green'
                 else:
                     data = 'SKIP'
-                    value = '-----'
-                    color = 'yellow'
+                    value = 'ERROR'
+                    color = 'red'
             else:
                 data = 'No DATA found'
                 value = 'ERROR'
@@ -268,8 +282,13 @@ class Main_Window(QtWidgets.QMainWindow):
                 'VALUE': value,
                 'COLOR': color
             }
-        except (IndexError, UnboundLocalError):
+        except (FileNotFoundError, IndexError, UnboundLocalError):
             Logs(' processData ' + str(sys.exc_info())).progLog()
+            processed = {
+                'DATA': 'FILE NOT FOUND or SOMETHING IS WRONG',
+                'VALUE': 'ERROR',
+                'COLOR': 'red'
+            }
         return processed
 
     def showNotification(self):
@@ -277,10 +296,10 @@ class Main_Window(QtWidgets.QMainWindow):
             now_time = datetime.now()
             log_time = datetime.fromtimestamp(os.stat('LOG/prog.log').st_mtime)
             compare_time = timedelta(minutes=1)
-            if now_time - log_time <= compare_time:
+            if now_time - log_time < compare_time:
                 try:
                     with open('LOG/prog.log', 'r')as f:
-                        log = f.readlines()[-1][27:128]
+                        log = f.readlines()[-1]
                 except IndexError:
                     print('index error')
                     with open('LOG/prog.log', 'w')as f:
@@ -290,21 +309,15 @@ class Main_Window(QtWidgets.QMainWindow):
             return log
         except FileNotFoundError:
             with open('LOG/prog.log', 'w')as f:
-                f.write('Log file is made')
+                f.write('Log file is made\n')
 
     def chooseByName(self, n):
         self.choose_by_name = n
 
-    def sendMessage(self, arg):
-        print(arg)
+    def sendMessage(self, but, frame):
+        but.clicked.connect(lambda: getattr(self.w, self.settings['FRAMESET'][frame]['SEND_TEXT']).setText('test'))
 
     def reset(self):
-        for frame in self.settings['FRAMESET']:
-            send_button = getattr(self.w, self.settings['FRAMESET'][frame]['SEND'])
-            try:
-                send_button.clicked.disconnect()
-            except TypeError:
-                pass
         self.w.timeLabel.setText('')
         try:
             self.port_scan.running = False
