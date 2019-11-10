@@ -28,7 +28,7 @@ class Main_Window(QtWidgets.QMainWindow):
         self.w.applyButton.clicked.connect(self.writeSettings)
         self.w.scanButton.clicked.connect(self.initScanPort)
         self.w.resetButton.clicked.connect(self.reset)
-        self.w.setportBox.activated[str].connect(self.showSettings)
+        self.w.setportBox.currentIndexChanged.connect(self.showSettings)
         self.w.senstypeBox.activated[str].connect(lambda: self.w.topText.setText(self.w.senstypeBox.currentText()))
         self.choose_by_name = 0
         self.readSettings()
@@ -61,12 +61,12 @@ class Main_Window(QtWidgets.QMainWindow):
                 i = 1
                 for frame in self.frame_list:
                     self.settings['FRAMESET'][frame] = {
-                        'VALUE': f'valueLabel_{i}',
-                        'TEXT': f'portText_{i}',
                         'PORT': f'portBox_{i}',
                         'NAME': f'nameBox_{i}',
+                        'VALUE': f'valueButton_{i}',
+                        'TEXT': f'portText_{i}',
                         'SEND': f'sendButton_{i}',
-                        'MUTE': f'muteButton_{i}'
+                        'SEND_TEXT': f'sendLine_{i}'
                     }
                     i += 1
                 with open('metsens.conf', 'w')as file:
@@ -136,6 +136,8 @@ class Main_Window(QtWidgets.QMainWindow):
         try:
             with open('metsens.conf', 'w')as file:
                 json.dump(self.settings, file, indent=4, ensure_ascii=False)
+                self.w.topText.setText('Settings saved')
+                self.w.setportBox.setCurrentText('None')
         except Exception:
             Logs(' writeSettings ' + str(sys.exc_info()), 1).progLog()
 
@@ -190,10 +192,11 @@ class Main_Window(QtWidgets.QMainWindow):
                 value_frame = getattr(self.w, FRAMES[frame]['VALUE'])
                 text_frame = getattr(self.w, FRAMES[frame]['TEXT'])
                 data = self.processData(current_port)
-                value_frame.setText(data['VALUE'])
-                text_frame.setText(data['DATA'])
-                color = data['COLOR']
-                value_frame.setStyleSheet(f'background-color: {color}')
+                if data != 'skip_data':
+                    value_frame.setText(data['VALUE'])
+                    text_frame.setText(data['DATA'])
+                    color = data['COLOR']
+                    value_frame.setStyleSheet(f'background-color: {color}')
         if not self.stop:
             QTimer.singleShot(1000, self.mainFrame)
 
@@ -207,52 +210,64 @@ class Main_Window(QtWidgets.QMainWindow):
             pass
         try:
             buf = data.split()
+            e_index = 1
             if SENS == 'LT':
-                value = buf[2][:-2]
-                status = buf[4]
+                for element in buf:
+                    if 'VIS' in element:
+                        e_index = buf.index(element)
+                value = buf[e_index+1]
+                status = buf[e_index+3]
                 if 'W' in status or 'A' in status or 'E' in status:
                     color = 'red'
                 elif 'I' in status or 'S' in status:
                     color = 'yellow'
+                    if '00100000000000000000' in status:
+                        color = 'orange'
                 else:
                     color = 'green'
             elif SENS == 'CL':
-                value = buf[3]
-                status = buf[6]
-                color = 'green'
+                for element in buf:
+                    if 'CT' in element:
+                        e_index = buf.index(element)
+                value = f'{buf[e_index+2]}  {buf[e_index+3]}  {buf[e_index+4]}'
+                status = buf[e_index+5]
+                if 'W' in buf[e_index+1] or 'A' in buf[e_index+1]:
+                    color = 'red'
+                elif '00000040' in status:
+                    color = 'orange'
+                else:
+                    color = 'green'
             elif SENS == 'WT':
                 if 'WIMWV' in data:
                     buf = data.replace(',', ' ').split()
-                    value = f'DD = {buf[1]} FF = {buf[3]}'
+                    value = f'{buf[1]} // {buf[3]}'
                     color = 'green'
+                else:
+                    data = 'skip_data'
+                    value = '-----'
+                    color = 'yellow'
             elif SENS =='MAWS':
                 if 'PAMWV' in data:
                     buf = data.replace(',', ' ').split()
-                    value = f'DD = {buf[1]} FF = {buf[3]}'
+                    value = f'{buf[1]} // {buf[3]}'
                 elif 'TU' in data:
                     buf = data.split()
                     value = f'TEMP = {buf[1]}'
                 color = 'green'
-            processed = {
-                'DATA': data,
-                'VALUE': value,
-                'COLOR': color
-            }
         except (IndexError, UnboundLocalError):
-            Logs(' processData ' + str(sys.exc_info())).progLog()
             try:
-                processed = {
-                    'DATA': data,
-                    'VALUE': '----',
-                    'COLOR': 'yellow'
-                }
+                value = '-----'
+                color = 'yellow'
             except UnboundLocalError:
                 Logs(' processData ' + str(sys.exc_info())).progLog()
-                processed = {
-                    'DATA': 'No DATA found',
-                    'VALUE': 'ERROR',
-                    'COLOR': 'red'
-                }
+                data = 'No DATA found'
+                value = 'ERROR'
+                color = 'red'
+        processed = {
+            'DATA': data,
+            'VALUE': value,
+            'COLOR': color
+        }
         return processed
 
     def showNotification(self):
