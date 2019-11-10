@@ -2,10 +2,9 @@
 
 # Form implementation generated from reading ui file 'metsens_design_nix.ui'
 #
-# Created by: PyQt5 UI code generator 5.13.0
+# Created by: PyQt5 UI code generator 5.12.2
 #
 # WARNING! All changes made in this file will be lost!
-
 
 from PyQt5 import QtCore, QtGui, QtWidgets
 
@@ -1617,3 +1616,5 @@ class Ui_MainWindow(object):
         self.writeLog_prog.setText(_translate("MainWindow", "Prog"))
         self.writeLog_port.setText(_translate("MainWindow", "Port"))
         self.writeLog_sens.setText(_translate("MainWindow", "Sens"))
+
+

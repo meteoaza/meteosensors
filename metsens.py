@@ -192,7 +192,7 @@ class Main_Window(QtWidgets.QMainWindow):
                 value_frame = getattr(self.w, FRAMES[frame]['VALUE'])
                 text_frame = getattr(self.w, FRAMES[frame]['TEXT'])
                 data = self.processData(current_port)
-                if data != 'skip_data':
+                if data['DATA'] != 'SKIP':
                     value_frame.setText(data['VALUE'])
                     text_frame.setText(data['DATA'])
                     color = data['COLOR']
@@ -243,31 +243,33 @@ class Main_Window(QtWidgets.QMainWindow):
                     value = f'{buf[1]} // {buf[3]}'
                     color = 'green'
                 else:
-                    data = 'skip_data'
+                    data = 'SKIP'
                     value = '-----'
                     color = 'yellow'
             elif SENS =='MAWS':
                 if 'PAMWV' in data:
                     buf = data.replace(',', ' ').split()
                     value = f'{buf[1]} // {buf[3]}'
+                    color = 'green'
                 elif 'TU' in data:
                     buf = data.split()
                     value = f'TEMP = {buf[1]}'
-                color = 'green'
-        except (IndexError, UnboundLocalError):
-            try:
-                value = '-----'
-                color = 'yellow'
-            except UnboundLocalError:
-                Logs(' processData ' + str(sys.exc_info())).progLog()
+                    color = 'green'
+                else:
+                    data = 'SKIP'
+                    value = '-----'
+                    color = 'yellow'
+            else:
                 data = 'No DATA found'
                 value = 'ERROR'
                 color = 'red'
-        processed = {
-            'DATA': data,
-            'VALUE': value,
-            'COLOR': color
-        }
+            processed = {
+                'DATA': data,
+                'VALUE': value,
+                'COLOR': color
+            }
+        except (IndexError, UnboundLocalError):
+            Logs(' processData ' + str(sys.exc_info())).progLog()
         return processed
 
     def showNotification(self):
