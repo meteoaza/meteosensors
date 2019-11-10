@@ -238,7 +238,7 @@ class Main_Window(QtWidgets.QMainWindow):
                 'VALUE': value,
                 'COLOR': color
             }
-        except UnboundLocalError:
+        except (IndexError, UnboundLocalError):
             Logs(' processData ' + str(sys.exc_info())).progLog()
             try:
                 processed = {
@@ -355,8 +355,9 @@ class Portscan():
                 else:
                     buf = ser.readline().rstrip()
                 data = buf.decode('UTF-8')
-                with open(f'DATA/{sens_type}_{port}.dat', 'w')as f:
-                    f.write(data)
+                if len(data) > 10:
+                    with open(f'DATA/{sens_type}_{port}.dat', 'w')as f:
+                        f.write(data)
                 time.sleep(1.5)
         except Exception:
             Logs(' readPort ' + str(sys.exc_info())).progLog()
