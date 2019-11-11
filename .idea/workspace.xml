@@ -2,8 +2,9 @@
 <project version="4">
   <component name="ChangeListManager">
     <list default="true" id="833c1584-7036-4e55-a6d4-7972b4daa5d7" name="Default Changelist" comment="">
+      <change beforePath="$PROJECT_DIR$/.idea/inspectionProfiles/profiles_settings.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/inspectionProfiles/profiles_settings.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/metsens.conf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/DATA/PTB_COM16.dat" beforeDir="false" afterPath="$PROJECT_DIR$/DATA/PTB_COM16.dat" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/metsens.py" beforeDir="false" afterPath="$PROJECT_DIR$/metsens.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/metsens_design.py" beforeDir="false" afterPath="$PROJECT_DIR$/metsens_design.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/metsens_design_nix.ui" beforeDir="false" afterPath="$PROJECT_DIR$/metsens_design_nix.ui" afterDir="false" />
@@ -17,16 +18,26 @@
   <component name="FavoritesManager">
     <favorites_list name="meteosensors" />
   </component>
+  <component name="FileTemplateManagerImpl">
+    <option name="RECENT_TEMPLATES">
+      <list>
+        <option value="Python Script" />
+      </list>
+    </option>
+  </component>
   <component name="Git.Settings">
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
   </component>
   <component name="ProjectId" id="1TDs5ct1sM5SfqypzqnPNTdHHFx" />
+  <component name="ProjectLevelVcsManager">
+    <ConfirmationsSetting value="1" id="Add" />
+  </component>
   <component name="PropertiesComponent">
     <property name="ASKED_ADD_EXTERNAL_FILES" value="true" />
     <property name="SHARE_PROJECT_CONFIGURATION_FILES" value="true" />
     <property name="last_opened_file_path" value="$PROJECT_DIR$/../myBot" />
     <property name="restartRequiresConfirmation" value="false" />
-    <property name="settings.editor.selected.configurable" value="configurable.group.language" />
+    <property name="settings.editor.selected.configurable" value="Errors" />
   </component>
   <component name="RunDashboard">
     <option name="ruleStates">
@@ -115,7 +126,21 @@
       <option name="project" value="LOCAL" />
       <updated>1573195339192</updated>
     </task>
-    <option name="localTasksCounter" value="3" />
+    <task id="LOCAL-00003" summary="10.11.19-1">
+      <created>1573348658943</created>
+      <option name="number" value="00003" />
+      <option name="presentableId" value="LOCAL-00003" />
+      <option name="project" value="LOCAL" />
+      <updated>1573348658943</updated>
+    </task>
+    <task id="LOCAL-00004" summary="10.11.19-2">
+      <created>1573388659353</created>
+      <option name="number" value="00004" />
+      <option name="presentableId" value="LOCAL-00004" />
+      <option name="project" value="LOCAL" />
+      <updated>1573388659353</updated>
+    </task>
+    <option name="localTasksCounter" value="5" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -134,6 +159,8 @@
   <component name="VcsManagerConfiguration">
     <MESSAGE value="07.11.19-1" />
     <MESSAGE value="07.11.19-2" />
-    <option name="LAST_COMMIT_MESSAGE" value="07.11.19-2" />
+    <MESSAGE value="10.11.19-1" />
+    <MESSAGE value="10.11.19-2" />
+    <option name="LAST_COMMIT_MESSAGE" value="10.11.19-2" />
   </component>
 </project>

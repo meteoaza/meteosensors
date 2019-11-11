@@ -5,12 +5,12 @@ import json
 import serial
 import threading
 from datetime import datetime, timedelta
-from PyQt5 import QtWidgets, QtGui
+from PyQt5 import QtWidgets
 from PyQt5.QtCore import QTimer, Qt
 from metsens_design import Ui_MainWindow
 
 
-class Main_Window(QtWidgets.QMainWindow):
+class MainWindow(QtWidgets.QMainWindow):
     def __init__(self):
         super().__init__()
         self.w = Ui_MainWindow()
@@ -56,6 +56,7 @@ class Main_Window(QtWidgets.QMainWindow):
                         'PARITY': 'None',
                         'STOPBIT': 'None',
                         'SENSTYPE': 'None',
+                        'PORTMODE': 'R',
                         'SENDMES': 'None'
                     }
                 i = 1
@@ -86,7 +87,7 @@ class Main_Window(QtWidgets.QMainWindow):
             for frame in FRAMESET:
                 port_box = getattr(self.w, FRAMESET[frame]['PORT'])
                 name_box = getattr(self.w, FRAMESET[frame]['NAME'])
-                self.sendMessage(getattr(self.w, FRAMESET[frame]['SEND']), frame)
+                self.connectSendButton(getattr(self.w, FRAMESET[frame]['SEND']), frame)
                 try:
                     port_box.activated[str].disconnect()
                     name_box.activated[str].disconnect()
@@ -167,6 +168,7 @@ class Main_Window(QtWidgets.QMainWindow):
                 ports_to_scan.append(port)
         self.port_scan = Portscan(*ports_to_scan, **self.settings)
         self.port_scan.running = True
+        self.port_scan.port_mode = 'R'
         self.stop = False
         if self.settings['PROGSET']['DATAWRITE']:
             self.port_scan.setPorts()
@@ -183,21 +185,32 @@ class Main_Window(QtWidgets.QMainWindow):
             name_box = getattr(self.w, FRAMES[frame]['NAME'])
             current_port = port_box.currentText()
             current_name = name_box.currentText()
-            if current_port != 'None' or current_name != 'None':
+            if current_name != 'None':
                 if self.choose_by_name:
                     for port in PORTS:
                         if PORTS[port]['NAME'] == current_name:
                             current_port = port
                             port_box.setCurrentText(current_port)
+            if current_port != 'None':
                 name_box.setCurrentText(PORTS[current_port]['NAME'])
                 value_frame = getattr(self.w, FRAMES[frame]['VALUE'])
                 text_frame = getattr(self.w, FRAMES[frame]['TEXT'])
                 data = self.processData(current_port)
-                if data['DATA'] != 'SKIP':
-                    value_frame.setText(data['VALUE'])
-                    text_frame.setText(data['DATA'])
-                    color = data['COLOR']
-                    value_frame.setStyleSheet(f'background-color: {color}')
+                if data != text_frame.toPlainText():
+                    if data['VALUE'] != 'OLD':
+                        value_frame.setText(data['VALUE'])
+                        text_frame.setText(data['DATA'])
+                        color = data['COLOR']
+                        value_frame.setStyleSheet(f'background-color: {color}')
+                    else:
+                        old_value = value_frame.text()
+                        value_frame.setText(old_value)
+                        text_frame.setText(data['DATA'])
+                        color = data['COLOR']
+                        value_frame.setStyleSheet(f'background-color: {color}')
+            else:
+                port_box.setCurrentText('None')
+                name_box.setCurrentText('None')
         if not self.stop:
             QTimer.singleShot(1000, self.mainFrame)
 
@@ -214,8 +227,8 @@ class Main_Window(QtWidgets.QMainWindow):
                     for element in buf:
                         if 'VIS' in element:
                             e_index = buf.index(element)
-                    value = buf[e_index+1][:-2]
-                    status = buf[e_index+3]
+                    value = buf[e_index + 1][:-2]
+                    status = buf[e_index + 3]
                     if 'W' in status or 'A' in status or 'E' in status:
                         color = 'red'
                     elif 'I' in status or 'S' in status:
@@ -225,26 +238,24 @@ class Main_Window(QtWidgets.QMainWindow):
                     else:
                         color = 'green'
                 else:
-                    data = 'SKIP'
-                    value = 'ERROR'
-                    color = 'red'
+                    value = 'OLD'
+                    color = 'violet'
             elif SENS == 'CL':
                 if 'CT' in data:
                     for element in buf:
                         if 'CT' in element:
                             e_index = buf.index(element)
-                    value = f'{buf[e_index+2]}  {buf[e_index+3]}  {buf[e_index+4]}'
-                    status = buf[e_index+5]
-                    if 'W' in buf[e_index+1] or 'A' in buf[e_index+1]:
+                    value = f'{buf[e_index + 2]}  {buf[e_index + 3]}  {buf[e_index + 4]}'
+                    status = buf[e_index + 5]
+                    if 'W' in buf[e_index + 1] or 'A' in buf[e_index + 1]:
                         color = 'red'
                     elif '00000040' in status:
                         color = 'orange'
                     else:
                         color = 'green'
                 else:
-                    data = 'SKIP'
-                    value = 'ERROR'
-                    color = 'red'
+                    value = 'OLD'
+                    color = 'violet'
             elif SENS == 'WT':
                 if 'WIMWV' in data or 'TU' in data:
                     if 'WIMWV' in data:
@@ -252,15 +263,13 @@ class Main_Window(QtWidgets.QMainWindow):
                         value = f'{buf[1]} // {buf[3]}'
                         color = 'green'
                     else:
-                        data = 'SKIP'
-                        value = '-----'
+                        value = 'OLD'
                         color = 'yellow'
                 else:
-                    data = 'SKIP'
-                    value = 'ERROR'
-                    color = 'red'
-            elif SENS =='MAWS':
-                if 'PAMWV'in data or 'TU' in data:
+                    value = 'OLD'
+                    color = 'violet'
+            elif SENS == 'MAWS':
+                if 'PAMWV' in data or 'TU' in data:
                     if 'PAMWV' in data:
                         buf = data.replace(',', ' ').split()
                         value = f'{buf[1]} // {buf[3]}'
@@ -270,9 +279,8 @@ class Main_Window(QtWidgets.QMainWindow):
                         value = f'TEMP = {buf[1]}'
                         color = 'green'
                 else:
-                    data = 'SKIP'
-                    value = 'ERROR'
-                    color = 'red'
+                    value = 'OLD'
+                    color = 'violet'
             else:
                 data = 'No DATA found'
                 value = 'ERROR'
@@ -300,10 +308,10 @@ class Main_Window(QtWidgets.QMainWindow):
                 try:
                     with open('LOG/prog.log', 'r')as f:
                         log = f.readlines()[-1]
-                except IndexError:
-                    print('index error')
+                except (UnboundLocalError, IndexError):
+                    log = 'Log file is made'
                     with open('LOG/prog.log', 'w')as f:
-                        f.write('Log file is made')
+                        f.write(log)
             else:
                 log = ''
             return log
@@ -314,8 +322,20 @@ class Main_Window(QtWidgets.QMainWindow):
     def chooseByName(self, n):
         self.choose_by_name = n
 
-    def sendMessage(self, but, frame):
-        but.clicked.connect(lambda: getattr(self.w, self.settings['FRAMESET'][frame]['SEND_TEXT']).setText('test'))
+    def connectSendButton(self, but, frame):
+        but.clicked.connect(lambda: self.sendMessage(frame))
+
+    def sendMessage(self, frame):
+        for f in self.settings['FRAMESET']:
+            if f == frame:
+                send_text = getattr(self.w, self.settings['FRAMESET'][frame]['SEND_TEXT'])
+                text = send_text.text()
+                send_text.clear()
+        for port in self.settings['PORTSET']:
+            if port == getattr(self.w, self.settings['FRAMESET'][frame]['PORT']).currentText():
+                self.settings['PORTSET'][port]['PORTMODE'] = 'W'
+                self.settings['PORTSET'][port]['SENDMES'] = text
+                self.port_scan.settings = self.settings
 
     def reset(self):
         self.w.timeLabel.setText('')
@@ -331,7 +351,7 @@ class Main_Window(QtWidgets.QMainWindow):
             self.close()
 
 
-class Portscan():
+class Portscan(MainWindow):
     def __init__(self, *args, **kwargs):
         self.ports_to_scan = args
         self.settings = kwargs
@@ -362,38 +382,43 @@ class Portscan():
                     stopbits=int(PORTS[port]['STOPBIT']),
                     timeout=3,
                 )
-                sens_type = PORTS[port]['SENSTYPE']
-                port_args = (ser, sens_type, port)
-                scan_thread = threading.Thread(target=self.readPort, args=(*port_args,), daemon=True)
+                scan_thread = threading.Thread(target=self.readPort, args=(ser, port,), daemon=True)
                 scan_thread.start()
             except Exception:
                 Logs(' scanPorts ' + str(sys.exc_info())).progLog()
 
-    def readPort(self, *args):
+    def readPort(self, ser, port):
+        sens_type = self.settings['PORTSET'][port]['SENSTYPE']
         try:
             while self.running:
-                ser = args[0]
-                sens_type = args[1]
-                port = args[2]
-                if sens_type == 'CL':
-                    buf = ser.read_until('\r').rstrip()
-                elif sens_type == 'LT':
-                    b = ser.readline()
-                    buf = b + ser.read_until('\r').rstrip()
-                elif sens_type == 'MILOS':
-                    buf = ser.readline().strip()
-                else:
-                    buf = ser.readline().rstrip()
-                data = buf.decode('UTF-8')
-                if len(data) > 10:
-                    with open(f'DATA/{sens_type}_{port}.dat', 'w')as f:
-                        f.write(data)
-                time.sleep(1.5)
+                if self.settings['PORTSET'][port]['PORTMODE'] == 'R':
+                    if sens_type == 'CL':
+                        buf = ser.read_until('\r').rstrip()
+                    elif sens_type == 'LT':
+                        b = ser.readline()
+                        b1 = ser.readline()
+                        buf = b + b1 + ser.read_until('\r').rstrip()
+                    elif sens_type == 'MILOS':
+                        buf = ser.readline().strip()
+                    else:
+                        buf = ser.readline().rstrip()
+                    data = buf.decode('UTF-8')
+                    if len(data) > 10:
+                        with open(f'DATA/{sens_type}_{port}.dat', 'w')as f:
+                            f.write(data)
+                elif self.settings['PORTSET'][port]['PORTMODE'] == 'W':
+                    ser.write(f"{self.settings['PORTSET'][port]['SENDMES']}\r\n".encode())
+                    self.settings['PORTSET'][port]['PORTMODE'] = 'R'
+            else:
+                ser.close()
         except Exception:
             Logs(' readPort ' + str(sys.exc_info())).progLog()
 
+    def writePort(self, *args):
+        pass
 
-class Logs():
+
+class Logs(MainWindow):
     def __init__(self, log, permittion=0):
         self.log = log
         self.write = permittion
@@ -413,5 +438,5 @@ class Logs():
 
 if __name__ == '__main__':
     app = QtWidgets.QApplication(sys.argv)
-    window = Main_Window()
+    window = MainWindow()
     sys.exit(app.exec())
