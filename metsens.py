@@ -67,7 +67,8 @@ class MainWindow(QtWidgets.QMainWindow):
                         'VALUE': f'valueButton_{i}',
                         'TEXT': f'portText_{i}',
                         'SEND': f'sendButton_{i}',
-                        'SEND_TEXT': f'sendLine_{i}'
+                        'SEND_TEXT': f'sendLine_{i}',
+                        'TERMODE': False
                     }
                     i += 1
                 with open('metsens.conf', 'w')as file:
@@ -181,36 +182,39 @@ class MainWindow(QtWidgets.QMainWindow):
         self.w.timeLabel.setText(clock)
         self.w.topText.setText(self.showNotification())
         for frame in FRAMES:
-            port_box = getattr(self.w, FRAMES[frame]['PORT'])
-            name_box = getattr(self.w, FRAMES[frame]['NAME'])
-            current_port = port_box.currentText()
-            current_name = name_box.currentText()
-            if current_name != 'None':
-                if self.choose_by_name:
-                    for port in PORTS:
-                        if PORTS[port]['NAME'] == current_name:
-                            current_port = port
-                            port_box.setCurrentText(current_port)
-            if current_port != 'None':
-                name_box.setCurrentText(PORTS[current_port]['NAME'])
-                value_frame = getattr(self.w, FRAMES[frame]['VALUE'])
-                text_frame = getattr(self.w, FRAMES[frame]['TEXT'])
-                data = self.processData(current_port)
-                if data != text_frame.toPlainText():
-                    if data['VALUE'] != 'OLD':
-                        value_frame.setText(data['VALUE'])
-                        text_frame.setText(data['DATA'])
-                        color = data['COLOR']
-                        value_frame.setStyleSheet(f'background-color: {color}')
-                    else:
-                        old_value = value_frame.text()
-                        value_frame.setText(old_value)
-                        text_frame.setText(data['DATA'])
-                        color = data['COLOR']
-                        value_frame.setStyleSheet(f'background-color: {color}')
+            if FRAMES[frame]['TERMODE']:
+                pass
             else:
-                port_box.setCurrentText('None')
-                name_box.setCurrentText('None')
+                port_box = getattr(self.w, FRAMES[frame]['PORT'])
+                name_box = getattr(self.w, FRAMES[frame]['NAME'])
+                current_port = port_box.currentText()
+                current_name = name_box.currentText()
+                if current_name != 'None':
+                    if self.choose_by_name:
+                        for port in PORTS:
+                            if PORTS[port]['NAME'] == current_name:
+                                current_port = port
+                                port_box.setCurrentText(current_port)
+                if current_port != 'None':
+                    name_box.setCurrentText(PORTS[current_port]['NAME'])
+                    value_frame = getattr(self.w, FRAMES[frame]['VALUE'])
+                    text_frame = getattr(self.w, FRAMES[frame]['TEXT'])
+                    data = self.processData(current_port)
+                    if data != text_frame.toPlainText():
+                        if data['VALUE'] != 'OLD':
+                            value_frame.setText(data['VALUE'])
+                            text_frame.setText(data['DATA'])
+                            color = data['COLOR']
+                            value_frame.setStyleSheet(f'background-color: {color}')
+                        else:
+                            old_value = value_frame.text()
+                            value_frame.setText(old_value)
+                            text_frame.setText(data['DATA'])
+                            color = data['COLOR']
+                            value_frame.setStyleSheet(f'background-color: {color}')
+                else:
+                    port_box.setCurrentText('None')
+                    name_box.setCurrentText('None')
         if not self.stop:
             QTimer.singleShot(1000, self.mainFrame)
 
@@ -239,7 +243,7 @@ class MainWindow(QtWidgets.QMainWindow):
                         color = 'green'
                 else:
                     value = 'OLD'
-                    color = 'violet'
+                    color = 'lightgreen'
             elif SENS == 'CL':
                 if 'CT' in data:
                     for element in buf:
@@ -255,7 +259,7 @@ class MainWindow(QtWidgets.QMainWindow):
                         color = 'green'
                 else:
                     value = 'OLD'
-                    color = 'violet'
+                    color = 'lightgreen'
             elif SENS == 'WT':
                 if 'WIMWV' in data or 'TU' in data:
                     if 'WIMWV' in data:
@@ -267,7 +271,7 @@ class MainWindow(QtWidgets.QMainWindow):
                         color = 'yellow'
                 else:
                     value = 'OLD'
-                    color = 'violet'
+                    color = 'lightgreen'
             elif SENS == 'MAWS':
                 if 'PAMWV' in data or 'TU' in data:
                     if 'PAMWV' in data:
@@ -280,7 +284,7 @@ class MainWindow(QtWidgets.QMainWindow):
                         color = 'green'
                 else:
                     value = 'OLD'
-                    color = 'violet'
+                    color = 'lightgreen'
             else:
                 data = 'No DATA found'
                 value = 'ERROR'
@@ -298,6 +302,28 @@ class MainWindow(QtWidgets.QMainWindow):
                 'COLOR': 'red'
             }
         return processed
+
+    def terminalMode(self, frame):
+        self.settings['FRAMESET'][frame]['TERMODE'] = True
+        FRAMES = self.settings['FRAMESET']
+        port_box = getattr(self.w, FRAMES[frame]['PORT'])
+        port = port_box.currentText()
+        text_frame = getattr(self.w, FRAMES[frame]['TEXT'])
+        text_frame.clear()
+        sens_type = self.settings['PORTSET'][port]['SENSTYPE']
+        with open(f'DATA/{sens_type}_{port}.dat', 'r')as f:
+            data = f.read()
+        text_frame.append(data)
+        send_text = getattr(self.w, self.settings['FRAMESET'][frame]['SEND_TEXT'])
+        text = send_text.text()
+        # send_text.clear()
+        if 'close' in text:
+            self.settings['FRAMESET'][frame]['TERMODE'] = False
+        self.settings['PORTSET'][port]['PORTMODE'] = 'W'
+        self.settings['PORTSET'][port]['SENDMES'] = text
+        self.port_scan.settings = self.settings
+        if self.settings['FRAMESET'][frame]['TERMODE']:
+            QTimer.singleShot(1000, lambda: self.terminalMode(frame))
 
     def showNotification(self):
         try:
@@ -323,19 +349,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.choose_by_name = n
 
     def connectSendButton(self, but, frame):
-        but.clicked.connect(lambda: self.sendMessage(frame))
-
-    def sendMessage(self, frame):
-        for f in self.settings['FRAMESET']:
-            if f == frame:
-                send_text = getattr(self.w, self.settings['FRAMESET'][frame]['SEND_TEXT'])
-                text = send_text.text()
-                send_text.clear()
-        for port in self.settings['PORTSET']:
-            if port == getattr(self.w, self.settings['FRAMESET'][frame]['PORT']).currentText():
-                self.settings['PORTSET'][port]['PORTMODE'] = 'W'
-                self.settings['PORTSET'][port]['SENDMES'] = text
-                self.port_scan.settings = self.settings
+        but.clicked.connect(lambda: self.terminalMode(frame))
 
     def reset(self):
         self.w.timeLabel.setText('')
@@ -413,9 +427,6 @@ class Portscan(MainWindow):
                 ser.close()
         except Exception:
             Logs(' readPort ' + str(sys.exc_info())).progLog()
-
-    def writePort(self, *args):
-        pass
 
 
 class Logs(MainWindow):

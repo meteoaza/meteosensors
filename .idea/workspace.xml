@@ -2,11 +2,8 @@
 <project version="4">
   <component name="ChangeListManager">
     <list default="true" id="833c1584-7036-4e55-a6d4-7972b4daa5d7" name="Default Changelist" comment="">
-      <change beforePath="$PROJECT_DIR$/.idea/inspectionProfiles/profiles_settings.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/inspectionProfiles/profiles_settings.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/DATA/PTB_COM16.dat" beforeDir="false" afterPath="$PROJECT_DIR$/DATA/PTB_COM16.dat" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/metsens.py" beforeDir="false" afterPath="$PROJECT_DIR$/metsens.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/metsens_design.py" beforeDir="false" afterPath="$PROJECT_DIR$/metsens_design.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/metsens_design_nix.ui" beforeDir="false" afterPath="$PROJECT_DIR$/metsens_design_nix.ui" afterDir="false" />
     </list>
     <option name="EXCLUDED_CONVERTED_TO_IGNORED" value="true" />
@@ -140,8 +137,18 @@
       <option name="project" value="LOCAL" />
       <updated>1573388659353</updated>
     </task>
-    <option name="localTasksCounter" value="5" />
+    <task id="LOCAL-00005" summary="11.11.19-2">
+      <created>1573469328311</created>
+      <option name="number" value="00005" />
+      <option name="presentableId" value="LOCAL-00005" />
+      <option name="project" value="LOCAL" />
+      <updated>1573469328311</updated>
+    </task>
+    <option name="localTasksCounter" value="6" />
     <servers />
+  </component>
+  <component name="UnknownFeatures">
+    <option featureType="com.intellij.fileTypeFactory" implementationName="*.conf" />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
     <option name="TAB_STATES">
@@ -161,6 +168,7 @@
     <MESSAGE value="07.11.19-2" />
     <MESSAGE value="10.11.19-1" />
     <MESSAGE value="10.11.19-2" />
-    <option name="LAST_COMMIT_MESSAGE" value="10.11.19-2" />
+    <MESSAGE value="11.11.19-2" />
+    <option name="LAST_COMMIT_MESSAGE" value="11.11.19-2" />
   </component>
 </project>
