@@ -32,6 +32,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.choose_by_name = 0
         self.readSettings()
         self.show()
+        global from_port
+        from_port = None
 
     def readSettings(self):
         try:
@@ -173,29 +175,37 @@ class MainWindow(QtWidgets.QMainWindow):
         self.mainFrame()
 
     def mainFrame(self):
+        global from_port
         PORTS = self.settings['PORTSET']
         FRAMES = self.settings['FRAMESET']
         clock = datetime.now().strftime('%d.%m.%Y %H:%M:%S')
         self.w.timeLabel.setText(clock)
         self.w.topText.setText(self.showNotification())
         for frame in FRAMES:
-            if FRAMES[frame]['TERMODE']:
-                pass
-            else:
-                port_box = getattr(self.w, FRAMES[frame]['PORT'])
-                name_box = getattr(self.w, FRAMES[frame]['NAME'])
-                current_port = port_box.currentText()
-                current_name = name_box.currentText()
-                if current_name != 'None':
-                    if self.choose_by_name:
-                        for port in PORTS:
-                            if PORTS[port]['NAME'] == current_name:
-                                current_port = port
-                                port_box.setCurrentText(current_port)
-                if current_port != 'None':
-                    name_box.setCurrentText(PORTS[current_port]['NAME'])
-                    value_frame = getattr(self.w, FRAMES[frame]['VALUE'])
-                    text_frame = getattr(self.w, FRAMES[frame]['TEXT'])
+            port_box = getattr(self.w, FRAMES[frame]['PORT'])
+            name_box = getattr(self.w, FRAMES[frame]['NAME'])
+            current_port = port_box.currentText()
+            current_name = name_box.currentText()
+            if current_name != 'None':
+                if self.choose_by_name:
+                    for port in PORTS:
+                        if PORTS[port]['NAME'] == current_name:
+                            current_port = port
+                            port_box.setCurrentText(current_port)
+            if current_port != 'None':
+                name_box.setCurrentText(PORTS[current_port]['NAME'])
+                value_frame = getattr(self.w, FRAMES[frame]['VALUE'])
+                text_frame = getattr(self.w, FRAMES[frame]['TEXT'])
+                if FRAMES[frame]['TERMODE']:
+                    print('termode', from_port)
+                    if from_port:
+                        sens_type = self.settings['PORTSET'][current_port]['SENSTYPE']
+                        with open(f'DATA/{sens_type}_{current_port}.dat', 'r')as f:
+                            data = f.read()
+                        if data != text_frame.toPlainText():
+                            text_frame.setText(data)
+                            print('text differs')
+                else:
                     data = self.processData(current_port)
                     if data != text_frame.toPlainText():
                         if data['VALUE'] != 'OLD':
@@ -209,9 +219,9 @@ class MainWindow(QtWidgets.QMainWindow):
                             text_frame.setText(data['DATA'])
                             color = data['COLOR']
                             value_frame.setStyleSheet(f'background-color: {color}')
-                else:
-                    port_box.setCurrentText('None')
-                    name_box.setCurrentText('None')
+            else:
+                port_box.setCurrentText('None')
+                name_box.setCurrentText('None')
         if not self.stop:
             QTimer.singleShot(1000, self.mainFrame)
 
@@ -221,76 +231,83 @@ class MainWindow(QtWidgets.QMainWindow):
         try:
             with open(f"DATA/{SENS}_{port}.dat", 'r')as f:
                 data = f.read()
-            buf = data.split()
-            e_index = 1
-            if SENS == 'LT':
-                if 'VIS' in data:
-                    for element in buf:
-                        if 'VIS' in element:
-                            e_index = buf.index(element)
-                    value = buf[e_index + 1][:-2]
-                    status = buf[e_index + 3]
-                    if 'W' in status or 'A' in status or 'E' in status:
-                        color = 'red'
-                    elif 'I' in status or 'S' in status:
-                        color = 'yellow'
-                        if '00100000000000000000' in status:
-                            color = 'orange'
-                    else:
-                        color = 'green'
-                else:
-                    value = 'OLD'
-                    color = 'lightgreen'
-            elif SENS == 'CL':
-                if 'CT' in data:
-                    for element in buf:
-                        if 'CT' in element:
-                            e_index = buf.index(element)
-                    value = f'{buf[e_index + 2]}  {buf[e_index + 3]}  {buf[e_index + 4]}'
-                    status = buf[e_index + 5]
-                    if 'W' in buf[e_index + 1] or 'A' in buf[e_index + 1]:
-                        color = 'red'
-                    elif '00000040' in status:
-                        color = 'orange'
-                    else:
-                        color = 'green'
-                else:
-                    value = 'OLD'
-                    color = 'lightgreen'
-            elif SENS == 'WT':
-                if 'WIMWV' in data or 'TU' in data:
-                    if 'WIMWV' in data:
-                        buf = data.replace(',', ' ').split()
-                        value = f'{buf[1]} // {buf[3]}'
-                        color = 'green'
+            if 'reconnecting'.upper() in data:
+                processed = {
+                    'DATA': 'reconnecting',
+                    'VALUE': '-----',
+                    'COLOR': 'yellow'
+                }
+            else:
+                buf = data.split()
+                e_index = 1
+                if SENS == 'LT':
+                    if 'VIS' in data:
+                        for element in buf:
+                            if 'VIS' in element:
+                                e_index = buf.index(element)
+                        value = buf[e_index + 1][:-2]
+                        status = buf[e_index + 3]
+                        if 'W' in status or 'A' in status or 'E' in status:
+                            color = 'red'
+                        elif 'I' in status or 'S' in status:
+                            color = 'yellow'
+                            if '00100000000000000000' in status:
+                                color = 'orange'
+                        else:
+                            color = 'green'
                     else:
                         value = 'OLD'
-                        color = 'yellow'
+                        color = 'lightgreen'
+                elif SENS == 'CL':
+                    if 'CT' in data:
+                        for element in buf:
+                            if 'CT' in element:
+                                e_index = buf.index(element)
+                        value = f'{buf[e_index + 2]}  {buf[e_index + 3]}  {buf[e_index + 4]}'
+                        status = buf[e_index + 5]
+                        if 'W' in buf[e_index + 1] or 'A' in buf[e_index + 1]:
+                            color = 'red'
+                        elif '00000040' in status:
+                            color = 'orange'
+                        else:
+                            color = 'green'
+                    else:
+                        value = 'OLD'
+                        color = 'lightgreen'
+                elif SENS == 'WT':
+                    if 'WIMWV' in data or 'TU' in data:
+                        if 'WIMWV' in data:
+                            buf = data.replace(',', ' ').split()
+                            value = f'{buf[1]} // {buf[3]}'
+                            color = 'green'
+                        else:
+                            value = 'OLD'
+                            color = 'yellow'
+                    else:
+                        value = 'OLD'
+                        color = 'lightgreen'
+                elif SENS == 'MAWS':
+                    if 'PAMWV' in data or 'TU' in data:
+                        if 'PAMWV' in data:
+                            buf = data.replace(',', ' ').split()
+                            value = f'{buf[1]} // {buf[3]}'
+                            color = 'green'
+                        elif 'TU' in data:
+                            buf = data.split()
+                            value = f'TEMP = {buf[1]}'
+                            color = 'green'
+                    else:
+                        value = 'OLD'
+                        color = 'lightgreen'
                 else:
-                    value = 'OLD'
-                    color = 'lightgreen'
-            elif SENS == 'MAWS':
-                if 'PAMWV' in data or 'TU' in data:
-                    if 'PAMWV' in data:
-                        buf = data.replace(',', ' ').split()
-                        value = f'{buf[1]} // {buf[3]}'
-                        color = 'green'
-                    elif 'TU' in data:
-                        buf = data.split()
-                        value = f'TEMP = {buf[1]}'
-                        color = 'green'
-                else:
-                    value = 'OLD'
-                    color = 'lightgreen'
-            else:
-                data = 'No DATA found'
-                value = 'ERROR'
-                color = 'red'
-            processed = {
-                'DATA': data,
-                'VALUE': value,
-                'COLOR': color
-            }
+                    data = 'No DATA found'
+                    value = 'ERROR'
+                    color = 'red'
+                processed = {
+                    'DATA': data,
+                    'VALUE': value,
+                    'COLOR': color
+                }
         except (FileNotFoundError, IndexError, UnboundLocalError):
             Logs(' processData ' + str(sys.exc_info())).progLog()
             processed = {
@@ -301,26 +318,28 @@ class MainWindow(QtWidgets.QMainWindow):
         return processed
 
     def terminalMode(self, frame):
-        self.settings['FRAMESET'][frame]['TERMODE'] = True
+        global from_port
         FRAMES = self.settings['FRAMESET']
         port_box = getattr(self.w, FRAMES[frame]['PORT'])
         port = port_box.currentText()
         text_frame = getattr(self.w, FRAMES[frame]['TEXT'])
-        text_frame.clear()
-        sens_type = self.settings['PORTSET'][port]['SENSTYPE']
-        with open(f'DATA/{sens_type}_{port}.dat', 'r')as f:
-            data = f.read()
-        text_frame.append(data)
         send_text = getattr(self.w, self.settings['FRAMESET'][frame]['SEND_TEXT'])
         text = send_text.text()
-        # send_text.clear()
-        if 'close' in text:
+        if 'open' in text:
+            self.settings['FRAMESET'][frame]['TERMODE'] = True
+            self.settings['PORTSET'][port]['PORTMODE'] = 'W'
+            self.from_port = False
+            text_frame.clear()
+        elif 'close' in text:
+            sens_type = self.settings['PORTSET'][port]['SENSTYPE']
+            with open(f'DATA/{sens_type}_{port}.dat', 'w')as f:
+                f.write('RECONNECTING...')
             self.settings['FRAMESET'][frame]['TERMODE'] = False
-        self.settings['PORTSET'][port]['PORTMODE'] = 'W'
+            text_frame.clear()
         self.settings['PORTSET'][port]['SENDMES'] = text
         self.port_scan.settings = self.settings
-        if self.settings['FRAMESET'][frame]['TERMODE']:
-            QTimer.singleShot(1000, lambda: self.terminalMode(frame))
+        send_text.clear()
+        from_port = False
 
     def showNotification(self):
         try:
@@ -332,7 +351,7 @@ class MainWindow(QtWidgets.QMainWindow):
                     with open('LOG/prog.log', 'r')as f:
                         log = f.readlines()[-1]
                 except (UnboundLocalError, IndexError):
-                    log = 'Log file is made'
+                    log = 'Log file is made\n'
                     with open('LOG/prog.log', 'w')as f:
                         f.write(log)
             else:
@@ -361,8 +380,12 @@ class MainWindow(QtWidgets.QMainWindow):
         if e.key() == Qt.Key_Escape:
             self.close()
 
+    def fromPort(self):
+        global from_port
+        from_port = True
 
-class Portscan(MainWindow):
+
+class Portscan():
     def __init__(self, *ports, **settings):
         self.ports_to_scan = ports
         self.settings = settings
@@ -391,39 +414,48 @@ class Portscan(MainWindow):
                     bytesize=int(PORTS[port]['BYTESIZE']),
                     parity=parity,
                     stopbits=int(PORTS[port]['STOPBIT']),
-                    timeout=3,
+                    timeout=2,
                 )
-                scan_thread = threading.Thread(target=self.readPort, args=(ser, port,), daemon=True)
+                scan_thread = threading.Thread(target=self.readWritePort, args=(ser, port,), daemon=True)
                 scan_thread.start()
             except Exception:
                 Logs(' scanPorts ' + str(sys.exc_info())).progLog()
 
-    def readPort(self, ser, port):
+    def readWritePort(self, ser, port):
         sens_type = self.settings['PORTSET'][port]['SENSTYPE']
         try:
             while self.running:
                 if self.settings['PORTSET'][port]['PORTMODE'] == 'R':
-                    if sens_type == 'CL':
-                        buf = ser.read_until('\r').rstrip()
-                    elif sens_type == 'LT':
-                        b = ser.readline()
-                        b1 = ser.readline()
-                        buf = b + b1 + ser.read_until('\r').rstrip()
-                    elif sens_type == 'MILOS':
-                        buf = ser.readline().strip()
-                    else:
-                        buf = ser.readline().rstrip()
-                    data = buf.decode('UTF-8')
-                    if len(data) > 10:
+                    buffer = ser.readlines()
+                    if len(buffer) >= 1:
+                        buffer = [item.decode() for item in buffer]
+                        data = [text.replace('\r', '') for text in buffer]
+                        data = ''.join(data)
                         with open(f'DATA/{sens_type}_{port}.dat', 'w')as f:
                             f.write(data)
                 elif self.settings['PORTSET'][port]['PORTMODE'] == 'W':
-                    ser.write(f"{self.settings['PORTSET'][port]['SENDMES']}\r\n".encode())
-                    self.settings['PORTSET'][port]['PORTMODE'] = 'R'
+                    if 'close' in self.settings['PORTSET'][port]['SENDMES']:
+                        self.settings['PORTSET'][port]['PORTMODE'] = 'R'
+                    if self.settings['PORTSET'][port]['SENDMES'] != '':
+                        ser.write(f"{self.settings['PORTSET'][port]['SENDMES']}\r\n".encode())
+                        self.settings['PORTSET'][port]['SENDMES'] = ''
+                        time.sleep(0.2)
+                    buffer = ser.readlines()
+                    while buffer:
+                        data = [item.decode() for item in buffer]
+                        data = [text.replace('\r', '') for text in data]
+                        data = ''.join(data)
+                        with open(f'DATA/{sens_type}_{port}.dat', 'a')as f:
+                            f.write(data)
+                        buffer = ser.readlines()
+                    else:
+                        win = MainWindow
+                        win.fromPort(MainWindow)
+                        time.sleep(0.5)
             else:
                 ser.close()
         except Exception:
-            Logs(' readPort ' + str(sys.exc_info())).progLog()
+            Logs(' readWritePort ' + str(sys.exc_info())).progLog()
 
 
 class Logs(MainWindow):
