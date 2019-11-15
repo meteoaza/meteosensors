@@ -1,4 +1,6 @@
 import time
+from playsound import playsound
+import pyttsx3
 import os
 import sys
 import json
@@ -28,15 +30,22 @@ class MainWindow(QtWidgets.QMainWindow):
         self.w.scanButton.clicked.connect(self.initScanPort)
         self.w.resetButton.clicked.connect(self.reset)
         self.w.setportBox.currentIndexChanged.connect(self.showSettings)
+        self.w.positionButton.clicked.connect(self.setPosition)
         self.w.senstypeBox.activated[str].connect(lambda: self.w.topText.setText(self.w.senstypeBox.currentText()))
         self.choose_by_name = 0
+        self.alarm = 1
+        self.voice = pyttsx3.init()
         self.readSettings()
         self.show()
-        global from_port
-        from_port = None
 
     def readSettings(self):
         try:
+            if not os.path.exists('TERMINAL'):
+                os.mkdir('TERMINAL')
+            if not os.path.exists('LOG/'):
+                os.mkdir('LOG/')
+            if not os.path.exists('DATA'):
+                os.mkdir('DATA')
             if not os.path.exists('metsens.conf'):
                 COMs = dict.fromkeys(self.com_list)
                 FRAMEs = dict.fromkeys(self.frame_list)
@@ -44,7 +53,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.settings['PROGSET'] = {
                     'VOICE': 0,
                     'SOUND': 0,
-                    'SENSLOG': 0,
+                    'BOT': 0,
                     'DATAWRITE': 0,
                     'DEADTIME': 0
                 }
@@ -55,9 +64,7 @@ class MainWindow(QtWidgets.QMainWindow):
                         'BYTESIZE': 'None',
                         'PARITY': 'None',
                         'STOPBIT': 'None',
-                        'SENSTYPE': 'None',
-                        'PORTMODE': 'R',
-                        'SENDMES': 'None'
+                        'SENSTYPE': 'None'
                     }
                 for frame in self.frame_list:
                     i = frame[5:]
@@ -68,7 +75,9 @@ class MainWindow(QtWidgets.QMainWindow):
                         'TEXT': f'portText_{i}',
                         'SEND': f'sendButton_{i}',
                         'SEND_TEXT': f'sendLine_{i}',
-                        'TERMODE': False
+                        'TERMODE': None,
+                        'WARNING': True,
+                        'POSITION': None
                     }
                 with open('metsens.conf', 'w')as file:
                     json.dump(self.settings, file, indent=4, ensure_ascii=False)
@@ -78,33 +87,44 @@ class MainWindow(QtWidgets.QMainWindow):
             FRAMESET = self.settings['FRAMESET']
             # Add existing sensor's ports to port boxes
             port_list = ['None']
+            bot_sens = []
             name_list = ['None']
             for com in PORTSET:
                 name = PORTSET[com]['NAME']
                 if name != 'None':
                     port_list.append(com)
+                    bot_sens.append(name)
                     name_list.append(name)
             for frame in FRAMESET:
                 port_box = getattr(self.w, FRAMESET[frame]['PORT'])
                 name_box = getattr(self.w, FRAMESET[frame]['NAME'])
-                self.connectSendButton(getattr(self.w, FRAMESET[frame]['SEND']), frame)
+                send_button = getattr(self.w, FRAMESET[frame]['SEND'])
+                value_button = getattr(self.w, FRAMESET[frame]['VALUE'])
                 try:
                     port_box.activated[str].disconnect()
                     name_box.activated[str].disconnect()
+                    self.connectSendButton(send_button, frame, 'disconnect')
+                    self.connectValueButton(value_button, frame, 'disconnect')
                 except TypeError:
                     pass
+                self.connectSendButton(send_button, frame, 'connect')
+                self.connectValueButton(value_button, frame, 'connect')
                 port_box.activated[str].connect(lambda: self.chooseByName(False))
                 name_box.activated[str].connect(lambda: self.chooseByName(True))
                 port_box.clear()
                 name_box.clear()
                 port_box.addItems(port_list)
                 name_box.addItems(name_list)
+            status = dict.fromkeys(bot_sens)
+            value = dict.fromkeys(bot_sens)
+            self.bot_data = {'STATUS': status, 'VALUE': value}
             # Show program settings in window
             self.w.voiceCheck.setCheckState(PROGSET['VOICE'])
             self.w.soundCheck.setCheckState(PROGSET['SOUND'])
-            self.w.senslogCheck.setCheckState(PROGSET['SENSLOG'])
+            self.w.botCheck.setCheckState(PROGSET['BOT'])
             self.w.datawriteCheck.setCheckState(PROGSET['DATAWRITE'])
             self.w.deadtimeSpin.setValue(PROGSET['DEADTIME'])
+            self.say('Hello, nice to see you')
         except Exception:
             Logs(' readSettings ' + str(sys.exc_info()), 1).progLog()
 
@@ -124,7 +144,7 @@ class MainWindow(QtWidgets.QMainWindow):
         new_set = {
             'VOICE': self.w.voiceCheck.checkState(),
             'SOUND': self.w.soundCheck.checkState(),
-            'SENSLOG': self.w.senslogCheck.checkState(),
+            'BOT': self.w.botCheck.checkState(),
             'DATAWRITE': self.w.datawriteCheck.checkState(),
             'DEADTIME': self.w.deadtimeSpin.value()
         }
@@ -135,6 +155,10 @@ class MainWindow(QtWidgets.QMainWindow):
                 except (AttributeError, IndexError):
                     Logs('writeSettings' + str(sys.exc_info()), 1).progLog()
         self.settings['PROGSET'].update(new_set)
+        FRAMES = self.settings['FRAMESET']
+        for frame in FRAMES:
+            port_box = getattr(self.w, FRAMES[frame]['PORT'])
+            FRAMES[frame]['POSITION'] = port_box.currentText()
         try:
             with open('metsens.conf', 'w')as file:
                 json.dump(self.settings, file, indent=4, ensure_ascii=False)
@@ -167,15 +191,13 @@ class MainWindow(QtWidgets.QMainWindow):
             if PORTS[port]["NAME"] != 'None':
                 ports_to_scan.append(port)
         self.port_scan = Portscan(*ports_to_scan, **self.settings)
-        self.port_scan.running = True
-        self.port_scan.port_mode = 'R'
         self.stop = False
         if self.settings['PROGSET']['DATAWRITE']:
             self.port_scan.setPorts()
+
         self.mainFrame()
 
     def mainFrame(self):
-        global from_port
         PORTS = self.settings['PORTSET']
         FRAMES = self.settings['FRAMESET']
         clock = datetime.now().strftime('%d.%m.%Y %H:%M:%S')
@@ -184,6 +206,8 @@ class MainWindow(QtWidgets.QMainWindow):
         for frame in FRAMES:
             port_box = getattr(self.w, FRAMES[frame]['PORT'])
             name_box = getattr(self.w, FRAMES[frame]['NAME'])
+            text_frame = getattr(self.w, FRAMES[frame]['TEXT'])
+            value_frame = getattr(self.w, FRAMES[frame]['VALUE'])
             current_port = port_box.currentText()
             current_name = name_box.currentText()
             if current_name != 'None':
@@ -194,152 +218,146 @@ class MainWindow(QtWidgets.QMainWindow):
                             port_box.setCurrentText(current_port)
             if current_port != 'None':
                 name_box.setCurrentText(PORTS[current_port]['NAME'])
-                value_frame = getattr(self.w, FRAMES[frame]['VALUE'])
-                text_frame = getattr(self.w, FRAMES[frame]['TEXT'])
                 if FRAMES[frame]['TERMODE']:
-                    print('termode', from_port)
-                    if from_port:
-                        sens_type = self.settings['PORTSET'][current_port]['SENSTYPE']
-                        with open(f'DATA/{sens_type}_{current_port}.dat', 'r')as f:
-                            data = f.read()
-                        if data != text_frame.toPlainText():
-                            text_frame.setText(data)
-                            print('text differs')
+                    # sens_type = self.settings['PORTSET'][current_port]['SENSTYPE']
+                    with open(f'DATA/{current_name}_{current_port}.dat', 'r')as f:
+                        data = f.read()
+                    previous_data = text_frame.toPlainText()
+                    if data[-10:] != previous_data[-10:]:
+                        text_frame.append(data)
+                        value_frame.setText('Terminal Mode')
                 else:
                     data = self.processData(current_port)
                     if data != text_frame.toPlainText():
-                        if data['VALUE'] != 'OLD':
-                            value_frame.setText(data['VALUE'])
-                            text_frame.setText(data['DATA'])
-                            color = data['COLOR']
-                            value_frame.setStyleSheet(f'background-color: {color}')
-                        else:
-                            old_value = value_frame.text()
-                            value_frame.setText(old_value)
-                            text_frame.setText(data['DATA'])
-                            color = data['COLOR']
-                            value_frame.setStyleSheet(f'background-color: {color}')
+                        value_frame.setText(data['VALUE'])
+                        text_frame.setText(data['DATA'])
+                        color = data['COLOR']
+                        value_frame.setStyleSheet(f'background-color: {color}')
+                    if data['COLOR'] == 'red':
+                        if FRAMES[frame]['WARNING']:
+                            text_frame.setStyleSheet('background: ')
+                            warning = f"{current_port} {current_name} {data['STATUS']}"
+                            if self.alarm == 1:
+                                alarm = threading.Thread(target=self.sensorWarning, args=(warning,), daemon=True)
+                                alarm.start()
+                            Logs(warning).sensLog()
+                        elif not FRAMES[frame]['WARNING']:
+                            text_frame.setStyleSheet('background: red')
             else:
-                port_box.setCurrentText('None')
                 name_box.setCurrentText('None')
+                text_frame.clear()
+                value_frame.setText('VALUE')
+                value_frame.setStyleSheet('background-color: ')
+        if self.settings['PROGSET']['BOT']:
+            self.writeBotData()
         if not self.stop:
             QTimer.singleShot(1000, self.mainFrame)
 
     def processData(self, port):
         PORTS = self.settings['PORTSET']
         SENS = PORTS[port]['SENSTYPE']
+        sens_name = PORTS[port]['NAME']
+        is_dead_time = self.ifDeadTime(f"DATA/{sens_name}_{port}.dat")
         try:
-            with open(f"DATA/{SENS}_{port}.dat", 'r')as f:
+            with open(f"DATA/{sens_name}_{port}.dat", 'r')as f:
                 data = f.read()
-            if 'reconnecting'.upper() in data:
+            if 'reconnecting'.lower() in data:
                 processed = {
-                    'DATA': 'reconnecting',
+                    'DATA': 'RECONNECTING...',
                     'VALUE': '-----',
                     'COLOR': 'yellow'
                 }
             else:
                 buf = data.split()
-                e_index = 1
-                if SENS == 'LT':
-                    if 'VIS' in data:
-                        for element in buf:
-                            if 'VIS' in element:
-                                e_index = buf.index(element)
-                        value = buf[e_index + 1][:-2]
-                        status = buf[e_index + 3]
+                visibility = ''
+                cloud = ''
+                wind_dir = ''
+                wind_speed = ''
+                temp = ''
+                pres = ''
+                status = 'OK'
+                value = ''
+                color = 'green'
+                i = 0
+                for item in buf:
+                    if 'VIS' in item:
+                        visibility = buf[i+1]
+                        status = buf[i+3]
                         if 'W' in status or 'A' in status or 'E' in status:
                             color = 'red'
                         elif 'I' in status or 'S' in status:
                             color = 'yellow'
                             if '00100000000000000000' in status:
                                 color = 'orange'
-                        else:
-                            color = 'green'
-                    else:
-                        value = 'OLD'
-                        color = 'lightgreen'
-                elif SENS == 'CL':
-                    if 'CT' in data:
-                        for element in buf:
-                            if 'CT' in element:
-                                e_index = buf.index(element)
-                        value = f'{buf[e_index + 2]}  {buf[e_index + 3]}  {buf[e_index + 4]}'
-                        status = buf[e_index + 5]
-                        if 'W' in buf[e_index + 1] or 'A' in buf[e_index + 1]:
+                    elif 'CT' in item:
+                        cloud = '{} {} {}'.format(buf[i+2], buf[i+3], buf[i+4])
+                        status = buf[i+5]
+                        if 'W' in buf[i+1] or 'A' in buf[i+1]:
                             color = 'red'
                         elif '00000040' in status:
                             color = 'orange'
-                        else:
-                            color = 'green'
-                    else:
-                        value = 'OLD'
-                        color = 'lightgreen'
-                elif SENS == 'WT':
-                    if 'WIMWV' in data or 'TU' in data:
-                        if 'WIMWV' in data:
-                            buf = data.replace(',', ' ').split()
-                            value = f'{buf[1]} // {buf[3]}'
-                            color = 'green'
-                        else:
-                            value = 'OLD'
-                            color = 'yellow'
-                    else:
-                        value = 'OLD'
-                        color = 'lightgreen'
-                elif SENS == 'MAWS':
-                    if 'PAMWV' in data or 'TU' in data:
-                        if 'PAMWV' in data:
-                            buf = data.replace(',', ' ').split()
-                            value = f'{buf[1]} // {buf[3]}'
-                            color = 'green'
-                        elif 'TU' in data:
-                            buf = data.split()
-                            value = f'TEMP = {buf[1]}'
-                            color = 'green'
-                    else:
-                        value = 'OLD'
-                        color = 'lightgreen'
-                else:
-                    data = 'No DATA found'
+                    elif 'WIMWV' in item or 'PAMWV' in item:
+                        wind = item.replace(',', ' ').split()
+                        wind_dir = int(wind[1])
+                        wind_speed = wind[3]
+                    elif 'TU' in item:
+                        temp = buf[i + 1]
+                    elif 'PTB' in item:
+                        pres = buf[i+1]
+                    if SENS == 'MILOS':
+                        if 'A' in item[1] and 'R' not in item:
+                            wind = item[-5:]
+                            wind_speed = int(wind[:3]) / 10
+                            wind_dir = int(int(wind[3:]) * 4.66)
+                        if 'P' in item[1]:
+                            pres = buf[i+1]
+                        elif 'TU' in item:
+                            temp = buf[i][4:]
+                            if temp == '':
+                                temp = buf[i + 1]
+                    i += 1
+                if SENS == 'LT':
+                    value = visibility
+                elif SENS == 'CL':
+                    value = cloud
+                elif SENS == 'WT' or SENS =='MAWS' or SENS == 'MILOS':
+                    if pres != '':
+                        pres = pres + 'hPa'
+                    if temp != '':
+                        temp = temp + '°'
+                    value = '{} / {}  {}  {}'.format(wind_dir, wind_speed, temp, pres)
+                elif SENS == 'PTB':
+                    value = pres
+                if is_dead_time:
+                    data = 'DATA FILE IS DEAD'
                     value = 'ERROR'
+                    status = 'ALARM! NO VALID DATA FOUND'
                     color = 'red'
                 processed = {
                     'DATA': data,
                     'VALUE': value,
+                    'STATUS': status,
                     'COLOR': color
                 }
-        except (FileNotFoundError, IndexError, UnboundLocalError):
+        except (FileNotFoundError, IndexError, UnboundLocalError, ValueError):
             Logs(' processData ' + str(sys.exc_info())).progLog()
             processed = {
                 'DATA': 'FILE NOT FOUND or SOMETHING IS WRONG',
                 'VALUE': 'ERROR',
+                'STATUS': '',
                 'COLOR': 'red'
             }
         return processed
 
-    def terminalMode(self, frame):
-        global from_port
-        FRAMES = self.settings['FRAMESET']
-        port_box = getattr(self.w, FRAMES[frame]['PORT'])
-        port = port_box.currentText()
-        text_frame = getattr(self.w, FRAMES[frame]['TEXT'])
-        send_text = getattr(self.w, self.settings['FRAMESET'][frame]['SEND_TEXT'])
-        text = send_text.text()
-        if 'open' in text:
-            self.settings['FRAMESET'][frame]['TERMODE'] = True
-            self.settings['PORTSET'][port]['PORTMODE'] = 'W'
-            self.from_port = False
-            text_frame.clear()
-        elif 'close' in text:
-            sens_type = self.settings['PORTSET'][port]['SENSTYPE']
-            with open(f'DATA/{sens_type}_{port}.dat', 'w')as f:
-                f.write('RECONNECTING...')
-            self.settings['FRAMESET'][frame]['TERMODE'] = False
-            text_frame.clear()
-        self.settings['PORTSET'][port]['SENDMES'] = text
-        self.port_scan.settings = self.settings
-        send_text.clear()
-        from_port = False
+    def writeBotData(self):
+        for port in self.settings['PORTSET']:
+            name = self.settings['PORTSET'][port]['NAME']
+            if name != 'None':
+                data = self.processData(port)
+                self.bot_data['STATUS'][name] = data['STATUS']
+                self.bot_data['VALUE'][name] = data['VALUE']
+                with open('DATA/bot_data.json', 'w')as f:
+                    json.dump(self.bot_data, f, indent=4, ensure_ascii=False)
 
     def showNotification(self):
         try:
@@ -364,8 +382,76 @@ class MainWindow(QtWidgets.QMainWindow):
     def chooseByName(self, n):
         self.choose_by_name = n
 
-    def connectSendButton(self, but, frame):
-        but.clicked.connect(lambda: self.terminalMode(frame))
+    def terminalMode(self, frame):
+        FRAMES = self.settings['FRAMESET']
+        port_box = getattr(self.w, FRAMES[frame]['PORT'])
+        port = port_box.currentText()
+        if port != 'None':
+            text_frame = getattr(self.w, FRAMES[frame]['TEXT'])
+            send_text = getattr(self.w, self.settings['FRAMESET'][frame]['SEND_TEXT'])
+            text_to_send = send_text.text()
+            if 'open' in text_to_send:
+                term_mode = True
+            elif 'close' in text_to_send:
+                term_mode = False
+            else:
+                term_mode = True
+            with open(f'TERMINAL/{port}_terminal', 'w')as term_file:
+                term_file.write(f'{port} {text_to_send}')
+            send_text.clear()
+            self.settings['FRAMESET'][frame]['TERMODE'] = term_mode
+            text_frame.clear()
+
+    def disableWarning(self, frame):
+        if self.settings['FRAMESET'][frame]['WARNING']:
+            self.settings['FRAMESET'][frame]['WARNING'] = False
+        elif not self.settings['FRAMESET'][frame]['WARNING']:
+            self.settings['FRAMESET'][frame]['WARNING'] = True
+
+    def connectSendButton(self, but, frame, act):
+        if act == 'connect':
+            but.clicked.connect(lambda: self.terminalMode(frame))
+        elif act == 'disconnect':
+            but.clicked.disconnect()
+
+    def connectValueButton(self, but, frame, act):
+        if act == 'connect':
+            but.clicked.connect(lambda: self.disableWarning(frame))
+        elif act == 'disconnect':
+            but.clicked.disconnect()
+
+    def ifDeadTime(self, file):
+        is_dead_time = False
+        try:
+            file_time = datetime.fromtimestamp(os.path.getmtime(file)).strftime('%M')
+            now_time = datetime.now().strftime('%M')
+            time_difference = int(now_time) - int(file_time)
+            if time_difference >= self.settings['PROGSET']['DEADTIME']:
+                is_dead_time = True
+        except FileNotFoundError:
+            pass
+        return is_dead_time
+
+    def sensorWarning(self, warning):
+        self.alarm = 0
+        self.say(warning)
+        if self.settings['PROGSET']['SOUND']:
+            playsound('alarm.wav')
+        self.alarm = 1
+
+    def setPosition(self):
+        FRAMES = self.settings['FRAMESET']
+        for frame in FRAMES:
+            port_box = getattr(self.w, FRAMES[frame]['PORT'])
+            port_box.setCurrentText(FRAMES[frame]['POSITION'])
+
+    def say(self, text):
+        if self.settings['PROGSET']['VOICE']:
+            voices = self.voice.getProperty('voices')
+            self.voice.setProperty('voice', voices[4].id)
+            self.voice.setProperty('rate', 200)
+            self.voice.say(text)
+            self.voice.runAndWait()
 
     def reset(self):
         self.w.timeLabel.setText('')
@@ -380,17 +466,12 @@ class MainWindow(QtWidgets.QMainWindow):
         if e.key() == Qt.Key_Escape:
             self.close()
 
-    def fromPort(self):
-        global from_port
-        from_port = True
-
 
 class Portscan():
     def __init__(self, *ports, **settings):
         self.ports_to_scan = ports
         self.settings = settings
-        if not os.path.exists('DATA'):
-            os.mkdir('DATA')
+        self.running = True
 
     def setPorts(self):
         PORTS = self.settings['PORTSET']
@@ -422,36 +503,30 @@ class Portscan():
                 Logs(' scanPorts ' + str(sys.exc_info())).progLog()
 
     def readWritePort(self, ser, port):
-        sens_type = self.settings['PORTSET'][port]['SENSTYPE']
         try:
             while self.running:
-                if self.settings['PORTSET'][port]['PORTMODE'] == 'R':
-                    buffer = ser.readlines()
-                    if len(buffer) >= 1:
+                try:
+                    with open(f'TERMINAL/{port}_terminal', 'r')as term_file:
+                        term_set = term_file.readline().split()
+                    if len(term_set) == 2:
+                        term_port = term_set[0]
+                        if term_port == port:
+                            message = term_set[1]
+                            ser.write(f"{message}\r\n".encode())
+                            os.remove(f'TERMINAL/{port}_terminal')
+                except FileNotFoundError:
+                    pass
+                buffer = ser.readlines()
+                if len(buffer) >= 1:
+                    sens_name = self.settings['PORTSET'][port]['NAME']
+                    try:
                         buffer = [item.decode() for item in buffer]
                         data = [text.replace('\r', '') for text in buffer]
                         data = ''.join(data)
-                        with open(f'DATA/{sens_type}_{port}.dat', 'w')as f:
-                            f.write(data)
-                elif self.settings['PORTSET'][port]['PORTMODE'] == 'W':
-                    if 'close' in self.settings['PORTSET'][port]['SENDMES']:
-                        self.settings['PORTSET'][port]['PORTMODE'] = 'R'
-                    if self.settings['PORTSET'][port]['SENDMES'] != '':
-                        ser.write(f"{self.settings['PORTSET'][port]['SENDMES']}\r\n".encode())
-                        self.settings['PORTSET'][port]['SENDMES'] = ''
-                        time.sleep(0.2)
-                    buffer = ser.readlines()
-                    while buffer:
-                        data = [item.decode() for item in buffer]
-                        data = [text.replace('\r', '') for text in data]
-                        data = ''.join(data)
-                        with open(f'DATA/{sens_type}_{port}.dat', 'a')as f:
-                            f.write(data)
-                        buffer = ser.readlines()
-                    else:
-                        win = MainWindow
-                        win.fromPort(MainWindow)
-                        time.sleep(0.5)
+                    except UnicodeDecodeError:
+                        data = str(sys.exc_info())
+                    with open(f'DATA/{sens_name}_{port}.dat', 'w')as f:
+                        f.write(data)
             else:
                 ser.close()
         except Exception:
@@ -459,21 +534,17 @@ class Portscan():
 
 
 class Logs(MainWindow):
-    def __init__(self, log, permittion=0):
+    def __init__(self, log):
         self.log = log
-        self.write = permittion
         self.t = str(datetime.now())
-        if not os.path.exists('LOG/'):
-            os.mkdir('LOG/')
 
     def progLog(self):
         with open('LOG/prog.log', 'a')as f:
             f.write(self.t + self.log + '\n')
 
     def sensLog(self):
-        if self.write:
-            with open('LOG/sens.log', 'a')as f:
-                f.write(self.t + self.log + '\n')
+        with open('LOG/sens.log', 'a')as f:
+            f.write(self.t + self.log + '\n')
 
 
 if __name__ == '__main__':
